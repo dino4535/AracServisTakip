@@ -33,7 +33,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
 
     const statsQuery = `
       SELECT 
-        (SELECT COUNT(*) FROM Vehicles v WHERE ${accessCondition}) as TotalVehicles,
+        (SELECT COUNT(*) FROM Vehicles v WHERE ${accessCondition} AND v.Status = 'Active') as TotalVehicles,
         (SELECT COUNT(*) FROM Vehicles v WHERE Status = 'Bakımda' AND ${accessCondition}) as VehiclesInMaintenance,
         (SELECT COUNT(*) FROM ServiceRequests sr 
          LEFT JOIN Vehicles v ON sr.VehicleID = v.VehicleID
