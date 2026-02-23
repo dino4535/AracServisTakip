@@ -45,7 +45,9 @@ interface Permission {
 
 const Admin = () => {
  
-  const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'depots' | 'serviceCompanies' | 'insuranceCompanies' | 'auditLogs' | 'opetSettings' | 'riskSettings'>('users');
+  const [activeTab, setActiveTab] = useState<
+    'users' | 'roles' | 'depots' | 'serviceCompanies' | 'insuranceCompanies' | 'auditLogs' | 'opetSettings' | 'jobEmailSettings' | 'riskSettings'
+  >('users');
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
