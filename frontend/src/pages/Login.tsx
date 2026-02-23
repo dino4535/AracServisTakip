@@ -83,10 +83,6 @@ const Login = () => {
               Giriş Yap
             </Button>
           </form>
-
-          <div className="mt-6 text-center text-sm text-white/80">
-            <p className="drop-shadow-sm">Varsayılan admin: admin@dino.com / Admin123</p>
-          </div>
         </div>
       </div>
     </div>
