@@ -13,6 +13,7 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.max(1, parseInt(limit as string));
     const offset = (pageNum - 1) * limitNum;
+    const isSearching = !!search && String(search).trim() !== '';
 
     const pool = await connectDB();
     const userId = req.user?.UserID;
@@ -87,7 +88,7 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
       ORDER BY f.FuelDate DESC
     `;
 
-    if (isExport !== 'true') {
+    if (isExport !== 'true' && !isSearching) {
       dataQuery += ` OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY`;
     }
 
@@ -98,8 +99,10 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
     if (startDate) request.input('StartDate', sql.Date, startDate);
     if (endDate) request.input('EndDate', sql.Date, endDate);
     if (search) request.input('SearchTerm', sql.NVarChar(100), search);
-    request.input('Offset', sql.Int, offset);
-    request.input('Limit', sql.Int, limitNum);
+    if (!isSearching && isExport !== 'true') {
+      request.input('Offset', sql.Int, offset);
+      request.input('Limit', sql.Int, limitNum);
+    }
 
     const result = await request.query(`${countQuery}; ${dataQuery}`);
     
@@ -111,8 +114,8 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
       pagination: {
         total,
         page: pageNum,
-        limit: isExport === 'true' ? total : limitNum,
-        totalPages: isExport === 'true' ? 1 : Math.ceil(total / limitNum)
+        limit: isExport === 'true' || isSearching ? total : limitNum,
+        totalPages: isExport === 'true' || isSearching ? 1 : Math.ceil(total / limitNum)
       }
     });
   } catch (error) {
