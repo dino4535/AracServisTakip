@@ -3,7 +3,9 @@ import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { hashPassword } from '../utils/password';
-
+import crypto from 'crypto';
+import { sendEmail } from '../services/emailService';
+import { logAudit } from '../services/auditService';
 export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page = 1, limit = 50, search } = req.query;
@@ -981,6 +983,159 @@ export const updateUserDepots = async (req: AuthRequest, res: Response): Promise
     }
   } catch (error) {
     console.error('Update user depots error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const sendWelcomeEmail = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const pool = await connectDB();
+
+    const userResult = await pool
+      .request()
+      .input('UserID', sql.Int, id)
+      .query(`
+        SELECT 
+          u.UserID,
+          u.Name,
+          u.Surname,
+          u.Email,
+          u.IsActive,
+          c.Name as CompanyName,
+          STRING_AGG(DISTINCT r.Name, ',') as Roles
+        FROM Users u
+        LEFT JOIN Companies c ON u.CompanyID = c.CompanyID
+        LEFT JOIN UserRoles ur ON u.UserID = ur.UserID
+        LEFT JOIN Roles r ON ur.RoleID = r.RoleID
+        WHERE u.UserID = @UserID
+        GROUP BY u.UserID, u.Name, u.Surname, u.Email, u.IsActive, c.Name
+      `);
+
+    if (userResult.recordset.length === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const user = userResult.recordset[0];
+
+    if (!user.Email) {
+      res.status(400).json({ error: 'User has no email address' });
+      return;
+    }
+
+    const depotResult = await pool
+      .request()
+      .input('UserID', sql.Int, id)
+      .query(`
+        SELECT d.Name
+        FROM UserDepots ud
+        JOIN Depots d ON ud.DepotID = d.DepotID
+        WHERE ud.UserID = @UserID
+      `);
+
+    const depotNames = depotResult.recordset.map((row: any) => row.Name).filter(Boolean);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await pool
+      .request()
+      .input('UserID', sql.Int, user.UserID)
+      .query(`
+        UPDATE PasswordResetTokens
+        SET Used = 1, UsedAt = GETDATE()
+        WHERE UserID = @UserID AND Used = 0
+      `);
+
+    await pool
+      .request()
+      .input('UserID', sql.Int, user.UserID)
+      .input('Token', sql.NVarChar(200), token)
+      .input('ExpiresAt', sql.DateTime2, expiresAt)
+      .query(`
+        INSERT INTO PasswordResetTokens (UserID, Token, ExpiresAt)
+        VALUES (@UserID, @Token, @ExpiresAt)
+      `);
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://arac.dinogida.com.tr';
+    const resetLink = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
+
+    const fullName = [user.Name, user.Surname].filter(Boolean).join(' ') || 'Kullanıcı';
+    const rolesText = user.Roles || '-';
+    const depotsText = depotNames.length > 0 ? depotNames.join(', ') : '-';
+    const companyText = user.CompanyName || '-';
+
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
+        <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">
+          Araç Servis Takip Portalı'na Hoş Geldiniz
+        </h2>
+        <p>Sayın ${fullName},</p>
+        <p>Araç Servis Takip Portalı'na kullanıcı olarak tanımlandınız. Aşağıda sistemde kayıtlı temel bilgileriniz yer almaktadır:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+          <tbody>
+            <tr>
+              <td style="padding: 6px 8px; font-weight: bold; width: 160px;">Ad Soyad</td>
+              <td style="padding: 6px 8px;">${fullName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 8px; font-weight: bold;">E-posta</td>
+              <td style="padding: 6px 8px;">${user.Email}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 8px; font-weight: bold;">Şirket</td>
+              <td style="padding: 6px 8px;">${companyText}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 8px; font-weight: bold;">Roller</td>
+              <td style="padding: 6px 8px;">${rolesText}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 8px; font-weight: bold;">Depolar</td>
+              <td style="padding: 6px 8px;">${depotsText}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>Sisteme giriş yapabilmeniz için öncelikle şifrenizi belirlemeniz gerekmektedir. Aşağıdaki butona tıklayarak şifre belirleme ekranına gidebilirsiniz:</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="${resetLink}" style="display: inline-block; background-color: #3498db; color: #fff; padding: 12px 24px; border-radius: 4px; text-decoration: none;">
+            Şifremi Belirle
+          </a>
+        </p>
+        <p>Eğer buton çalışmazsa, aşağıdaki bağlantıyı tarayıcınıza yapıştırabilirsiniz:</p>
+        <p style="word-break: break-all; font-size: 12px; color: #555;">${resetLink}</p>
+        <p style="margin-top: 24px; font-size: 12px; color: #7f8c8d;">
+          Bu bağlantı 1 saat süreyle geçerlidir. Eğer bu e-posta size yanlışlıkla ulaştığını düşünüyorsanız lütfen sistem yöneticiniz ile iletişime geçin.
+        </p>
+      </div>
+    `;
+
+    await sendEmail(
+      user.Email,
+      'Araç Servis Takip Portalı - Hoş Geldiniz',
+      emailContent
+    );
+
+    await logAudit(
+      req.user?.UserID,
+      'SEND_WELCOME_EMAIL',
+      'Users',
+      user.UserID,
+      {
+        targetUserId: user.UserID,
+        targetEmail: user.Email,
+        company: companyText,
+        roles: rolesText,
+        depots: depotNames,
+      },
+      (req as any).ip || '0.0.0.0'
+    );
+
+    res.json({ message: 'Welcome email sent successfully' });
+  } catch (error) {
+    console.error('Send welcome email error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

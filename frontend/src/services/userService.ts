@@ -47,4 +47,8 @@ export const userService = {
   updateUserDepots: async (id: number, depotIds: number[]): Promise<void> => {
     await api.put(`/admin/users/${id}/depots`, { depotIds });
   },
+  sendWelcomeEmail: async (id: number): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/admin/users/${id}/welcome-email`);
+    return response.data;
+  },
 };

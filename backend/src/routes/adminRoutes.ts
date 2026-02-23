@@ -27,7 +27,8 @@ import {
   getAllInsuranceCompanies,
   createInsuranceCompany,
   updateInsuranceCompany,
-  deleteInsuranceCompany
+  deleteInsuranceCompany,
+  sendWelcomeEmail
 } from '../controllers/adminController';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
@@ -119,6 +120,7 @@ router.post('/users/bulk-managers', authenticate, authorize(PERMISSIONS.ADMIN.US
 router.delete('/users/:id', authenticate, authorize(PERMISSIONS.ADMIN.USERS_DELETE), deleteUser);
 router.get('/users/:id/depots', authenticate, authorize(PERMISSIONS.ADMIN.USERS_VIEW), getUserDepots);
 router.put('/users/:id/depots', authenticate, authorize(PERMISSIONS.ADMIN.USERS_EDIT), updateUserDepots);
+router.post('/users/:id/welcome-email', authenticate, authorize(PERMISSIONS.ADMIN.USERS_EDIT), sendWelcomeEmail);
 
 // Roles
 /**

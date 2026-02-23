@@ -3,7 +3,7 @@ import Layout from '../components/layout/Layout';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
-import { Users, Shield, Plus, Edit, Trash2, CheckCircle, XCircle, MapPin, FileText, Building } from 'lucide-react';
+import { Users, Shield, Plus, Edit, Trash2, CheckCircle, XCircle, MapPin, FileText, Building, Send } from 'lucide-react';
 import { userService } from '../services/userService';
 import { adminService } from '../services/adminService';
 import { PERMISSIONS } from '../hooks/usePermissions';
@@ -263,6 +263,21 @@ const Admin = () => {
         (error?.response?.status === 400
           ? 'Geçersiz istek. Lütfen girdiğiniz bilgileri kontrol edin.'
           : 'Kullanıcı kaydedilirken bir hata oluştu.');
+      toast.error(message);
+    }
+  };
+
+  const handleSendWelcomeEmail = async (user: User) => {
+    try {
+      const response = await userService.sendWelcomeEmail(user.UserID);
+      toast.success(response?.message || `${user.Email} adresine hoşgeldin e-postası gönderildi`);
+    } catch (error: any) {
+      console.error('Error sending welcome email:', error);
+      const message =
+        error?.response?.data?.error ||
+        (error?.response?.status === 403
+          ? 'Bu işlem için yetkiniz bulunmuyor.'
+          : 'Hoşgeldin e-postası gönderilirken bir hata oluştu.');
       toast.error(message);
     }
   };
@@ -757,6 +772,15 @@ const Admin = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-2">
+                          <PermissionGuard permission={PERMISSIONS.ADMIN.USERS_EDIT}>
+                            <button
+                              onClick={() => handleSendWelcomeEmail(user)}
+                              className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                              title="Hoşgeldin maili gönder"
+                            >
+                              <Send className="w-4 h-4 text-primary-600" />
+                            </button>
+                          </PermissionGuard>
                           <PermissionGuard permission={PERMISSIONS.ADMIN.USERS_EDIT}>
                             <button
                               onClick={() => handleOpenUserModal(user)}
