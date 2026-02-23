@@ -17,10 +17,10 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        - VITE_API_URL=/api
+        - VITE_API_URL=http://77.83.37.229:3010/api
     container_name: arac-servis-frontend
     ports:
       - "4010:4010"
     environment:
-      - VITE_API_URL=/api
+      - VITE_API_URL=http://77.83.37.229:3010/api
     restart: unless-stopped
