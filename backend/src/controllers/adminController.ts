@@ -1003,14 +1003,10 @@ export const sendWelcomeEmail = async (req: AuthRequest, res: Response): Promise
           u.Surname,
           u.Email,
           u.IsActive,
-          c.Name as CompanyName,
-          STRING_AGG(r.Name, ',') as Roles
+          c.Name as CompanyName
         FROM Users u
         LEFT JOIN Companies c ON u.CompanyID = c.CompanyID
-        LEFT JOIN UserRoles ur ON u.UserID = ur.UserID
-        LEFT JOIN Roles r ON ur.RoleID = r.RoleID
         WHERE u.UserID = @UserID
-        GROUP BY u.UserID, u.Name, u.Surname, u.Email, u.IsActive, c.Name
       `);
 
     if (userResult.recordset.length === 0) {
@@ -1025,6 +1021,16 @@ export const sendWelcomeEmail = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
+    const rolesResult = await pool
+      .request()
+      .input('UserID', sql.Int, id)
+      .query(`
+        SELECT r.Name
+        FROM UserRoles ur
+        JOIN Roles r ON ur.RoleID = r.RoleID
+        WHERE ur.UserID = @UserID
+      `);
+
     const depotResult = await pool
       .request()
       .input('UserID', sql.Int, id)
@@ -1036,6 +1042,7 @@ export const sendWelcomeEmail = async (req: AuthRequest, res: Response): Promise
       `);
 
     const depotNames = depotResult.recordset.map((row: any) => row.Name).filter(Boolean);
+    const roleNames = rolesResult.recordset.map((row: any) => row.Name).filter(Boolean);
 
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
@@ -1063,7 +1070,7 @@ export const sendWelcomeEmail = async (req: AuthRequest, res: Response): Promise
     const resetLink = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
 
     const fullName = [user.Name, user.Surname].filter(Boolean).join(' ') || 'Kullanıcı';
-    const rolesText = user.Roles || '-';
+    const rolesText = roleNames.length > 0 ? roleNames.join(', ') : '-';
     const depotsText = depotNames.length > 0 ? depotNames.join(', ') : '-';
     const companyText = user.CompanyName || '-';
 
