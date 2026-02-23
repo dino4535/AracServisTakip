@@ -270,7 +270,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
         VALUES (@UserID, @Token, @ExpiresAt)
       `);
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4010';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://arac.dinogida.com.tr';
     const resetLink = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
 
     const fullName = [user.Name, user.Surname].filter(Boolean).join(' ') || 'Kullanıcı';
