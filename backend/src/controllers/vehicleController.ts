@@ -24,6 +24,7 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
     const offset = limitNum > 0 ? (pageNum - 1) * limitNum : 0;
 
     const pool = await connectDB();
+    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
 
     // Base filtering logic
     let whereClause = "WHERE v.Status != 'Deleted'";
@@ -516,6 +517,10 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
 
     const pool = await connectDB();
 
+    const isSuperAdmin =
+      req.user?.Role === 'SuperAdmin' ||
+      req.user?.Role === 'Super Admin';
+
     if (!segment) {
       const rawUpdate = `${make || ''} ${model || ''}`.toLowerCase();
       if (!model || String(model).trim() === '') {
@@ -576,7 +581,6 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       }
     }
 
-    // Security Check: Ensure user has access to the vehicle
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, Number(id))
       .input('CompanyID', sql.Int, req.user?.CompanyID || null)
@@ -599,23 +603,13 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     const currentVin = vehicleCheck.recordset[0].VIN as string | null;
     const currentCurrentKm = vehicleCheck.recordset[0].CurrentKm as number | null;
 
-    // Security Check: If changing company, ensure access to target company
-    if (companyId && companyId !== currentVehicleCompanyId && !req.user?.CompanyID && req.user?.Role !== 'SuperAdmin') {
-       const targetCompanyCheck = await pool.request()
-        .input('UserID', sql.Int, req.user?.UserID)
-        .input('CompanyID', sql.Int, companyId)
-        .query('SELECT 1 FROM UserCompanies WHERE UserID = @UserID AND CompanyID = @CompanyID');
-       
-       if (targetCompanyCheck.recordset.length === 0) {
-         res.status(403).json({ error: 'You do not have permission for the target company' });
-         return;
-       }
+    if (companyId && companyId !== currentVehicleCompanyId && !isSuperAdmin) {
+      res.status(403).json({ error: 'Only Super Admin can change vehicle company' });
+      return;
     }
 
-    // Determine if CompanyID should be updated
-    // Only Super Admin (no req.user.CompanyID) can change CompanyID
     let companyUpdateSql = '';
-    if (!req.user?.CompanyID && companyId !== undefined) {
+    if (isSuperAdmin && companyId !== undefined) {
       companyUpdateSql = 'CompanyID = @CompanyID,';
     }
 
@@ -659,7 +653,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('DepotID', sql.Int, Number(depotId) || null)
       .input('ManagerID', sql.Int, Number(managerId) || null);
 
-    if (!req.user?.CompanyID && companyId !== undefined) {
+    if (isSuperAdmin && companyId !== undefined) {
       request.input('CompanyID', sql.Int, companyId || null);
     }
 

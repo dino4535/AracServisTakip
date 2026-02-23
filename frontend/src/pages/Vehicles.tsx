@@ -18,6 +18,9 @@ import { useAuth } from '../hooks/useAuth';
 const Vehicles = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isSuperAdmin = Array.isArray(user?.Roles)
+    ? user.Roles.some(role => role === 'SuperAdmin' || role === 'Super Admin')
+    : (user as any)?.Roles === 'SuperAdmin' || (user as any)?.Roles === 'Super Admin';
   
   const [currentPage, setCurrentPage] = useState(1);
   const limit = 50;
@@ -74,7 +77,7 @@ const Vehicles = () => {
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => adminService.getAllCompanies(),
-    enabled: user?.Roles.includes('Super Admin'),
+    enabled: isSuperAdmin,
   });
 
   const { data: depotsResponse } = useQuery({
@@ -92,20 +95,20 @@ const Vehicles = () => {
 
   // Filtered lists
   const filteredDepots = useMemo(() => {
-    if (user?.Roles.includes('Super Admin')) {
+    if (isSuperAdmin) {
       return formData.CompanyID ? depots.filter(d => d.CompanyID === formData.CompanyID) : [];
     }
     return depots.filter(d => d.CompanyID === user?.CompanyID);
   }, [depots, formData.CompanyID, user]);
 
   const filteredManagers = useMemo(() => {
-    const targetCompanyId = user?.Roles.includes('Super Admin') ? formData.CompanyID : user?.CompanyID;
+    const targetCompanyId = isSuperAdmin ? formData.CompanyID : user?.CompanyID;
     if (!targetCompanyId) return [];
     return users.filter(u => u.CompanyID === targetCompanyId && (u.Roles.includes('Manager') || u.Roles.includes('Admin')));
   }, [users, formData.CompanyID, user]);
 
   const filteredDrivers = useMemo(() => {
-    const targetCompanyId = user?.Roles.includes('Super Admin') ? formData.CompanyID : user?.CompanyID;
+    const targetCompanyId = isSuperAdmin ? formData.CompanyID : user?.CompanyID;
     if (!targetCompanyId) return [];
     return users.filter(u => u.CompanyID === targetCompanyId && u.Roles.includes('Driver'));
   }, [users, formData.CompanyID, user]);
@@ -195,7 +198,7 @@ const Vehicles = () => {
       setFormData({ 
         CurrentKm: 0, 
         Status: 'Active',
-        CompanyID: user?.Roles?.includes('Super Admin') ? undefined : user?.CompanyID 
+        CompanyID: isSuperAdmin ? undefined : user?.CompanyID 
       });
     }
     setIsModalOpen(true);
@@ -577,7 +580,7 @@ const Vehicles = () => {
 
       <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={selectedVehicle ? 'Araç Düzenle' : 'Araç Ekle'}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {user?.Roles.includes('Super Admin') && (
+          {isSuperAdmin && (
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">Şirket *</label>
               <select
