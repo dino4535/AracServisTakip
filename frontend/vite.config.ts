@@ -10,7 +10,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 4010, // Nginx ile uyumlu olması için 5173'ü 4010 yaptık
+    allowedHosts: ['arac.dinogida.com.tr'], // Domain engellemesini kaldırıyoruz
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -18,4 +19,9 @@ export default defineConfig({
       },
     },
   },
+  // Uygulamanızı yayına alırken "preview" kullanıyorsanız diye bu bloğu da ekliyoruz:
+  preview: {
+    port: 4010,
+    allowedHosts: ['arac.dinogida.com.tr'],
+  }
 })
