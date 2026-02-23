@@ -19,13 +19,13 @@ const Layout = ({ children }: LayoutProps) => {
               className="fixed inset-0 bg-black/40 z-40 md:hidden"
               onClick={() => setIsMobileSidebarOpen(false)}
             />
-            <div className="fixed inset-y-0 left-0 z-50 w-72 max-w-full md:hidden">
+            <div className="fixed inset-y-0 left-0 z-50 w-72 max-w-full md:hidden overflow-y-auto">
               <Sidebar />
             </div>
           </>
         )}
 
-        <div className="hidden md:block">
+        <div className="hidden md:block h-full">
           <Sidebar />
         </div>
 

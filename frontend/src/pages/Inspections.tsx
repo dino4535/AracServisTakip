@@ -123,13 +123,13 @@ const Inspections = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-neutral-900">Araç Muayeneleri</h1>
             <p className="text-neutral-500">Araç muayene takibi ve yönetimi</p>
           </div>
-          <div className="flex items-center space-x-3">
-            <div className="w-64">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:space-x-3">
+            <div className="w-full md:w-64">
               <input
                 type="text"
                 value={searchInput}
@@ -139,7 +139,7 @@ const Inspections = () => {
               />
             </div>
             <PermissionGuard permission={PERMISSIONS.INSPECTIONS.ADD}>
-              <Button onClick={() => handleOpenModal()}>
+              <Button onClick={() => handleOpenModal()} className="w-full md:w-auto justify-center">
                 <Plus className="w-5 h-5 mr-2" />
                 Yeni Muayene Ekle
               </Button>
@@ -174,9 +174,9 @@ const Inspections = () => {
           )}
         </div>
 
-        <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-neutral-200">
+            <table className="min-w-full divide-y divide-neutral-200 hidden md:table">
               <thead className="bg-neutral-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">
@@ -273,6 +273,97 @@ const Inspections = () => {
               </tbody>
             </table>
           </div>
+
+          <div className="md:hidden divide-y divide-neutral-200">
+            {inspections.map((record) => {
+              const daysRemaining = calculateDaysUntil(record.NextInspectionDate);
+              const expired = isExpired(record.NextInspectionDate);
+              const expiringSoon = isExpiringSoon(record.NextInspectionDate, 30);
+
+              return (
+                <div key={record.InspectionID} className="p-4 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-9 w-9 rounded-full bg-neutral-100 flex items-center justify-center">
+                          <CarIcon className="w-4 h-4 text-neutral-500" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-neutral-900">
+                            {record.Plate}
+                          </div>
+                          <div className="text-xs text-neutral-500">
+                            {record.Make} {record.Model}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-neutral-500 space-y-1">
+                        <div>
+                          Son Muayene: {formatDate(record.InspectionDate)}
+                        </div>
+                        <div>
+                          Gelecek Muayene: {formatDate(record.NextInspectionDate)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-neutral-500 space-y-2">
+                      <div>
+                        {expired ? (
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-semibold">
+                            Süresi Dolmuş
+                          </span>
+                        ) : expiringSoon ? (
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 font-semibold">
+                            Yaklaşıyor
+                          </span>
+                        ) : (
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-semibold">
+                            Geçerli
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        {expired
+                          ? `${Math.abs(daysRemaining)} gün geçti`
+                          : `${daysRemaining} gün kaldı`}
+                      </div>
+                      <div className="font-semibold text-neutral-900">
+                        {formatCurrency(record.Cost)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end pt-2 border-t border-neutral-100 mt-2">
+                    <div className="flex items-center space-x-2">
+                      <PermissionGuard permission={PERMISSIONS.INSPECTIONS.EDIT}>
+                        <button
+                          onClick={() => handleOpenModal(record)}
+                          className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                        >
+                          <Edit className="w-4 h-4 text-primary-600" />
+                        </button>
+                      </PermissionGuard>
+                      <PermissionGuard permission={PERMISSIONS.INSPECTIONS.DELETE}>
+                        <button
+                          onClick={() => handleDelete(record.InspectionID)}
+                          className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
+                      </PermissionGuard>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {!loading && inspections.length === 0 && (
+            <div className="p-8 text-center text-neutral-500">
+              Muayene kaydı bulunmuyor
+            </div>
+          )}
+
           <Pagination
             currentPage={currentPage}
             totalPages={pagination.totalPages}
