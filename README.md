@@ -104,10 +104,10 @@ cp .env.example .env
 `.env` dosyası:
 ```env
 # Database
-DB_SERVER=77.83.37.247
-DB_USER=OGUZ
-DB_PASSWORD=@1B9j9K045.
-DB_NAME=AracServisTakip
+DB_SERVER=localhost
+DB_USER=test
+DB_PASSWORD=test  
+DB_NAME=ASTakip
 DB_PORT=1433
 
 # JWT
@@ -175,7 +175,7 @@ Frontend `http://localhost:5173` adresinde çalışacak.
 
 ## 👤 Varsayılan Admin Kullanıcısı
 
-**Email:** `admin@dino.com`  
+**Email:** `ast@dino.com`  
 **Şifre:** `Admin123`
 
 > ⚠️ **Önemli:** Production ortamında şifreyi mutlaka değiştirin!
