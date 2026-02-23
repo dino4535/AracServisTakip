@@ -196,13 +196,13 @@ const Maintenance = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center space-x-3">
             <Wrench className="w-6 h-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-neutral-900">Bakım Yönetimi</h1>
           </div>
-          <div className="flex items-center space-x-3">
-            <div className="w-64">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:space-x-3">
+            <div className="w-full md:w-64">
               <input
                 type="text"
                 value={searchInput}
@@ -212,7 +212,7 @@ const Maintenance = () => {
               />
             </div>
             <PermissionGuard permission={PERMISSIONS.MAINTENANCE.ADD}>
-              <Button onClick={() => handleOpenModal()}>
+              <Button onClick={() => handleOpenModal()} className="w-full md:w-auto justify-center">
                 <Plus className="w-4 h-4 mr-2" />
                 Bakım Ekle
               </Button>
@@ -253,90 +253,174 @@ const Maintenance = () => {
                 Veriler yükleniyor...
               </div>
             )}
-            <table className="w-full">
-              <thead className="bg-neutral-50 border-b border-neutral-200">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Araç</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Tip</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Açıklama</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Tarih</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Maliyet</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Sonraki Bakım</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {maintenanceRecords.map((record) => {
-                  const daysUntil = record.NextServiceDate ? calculateDaysUntil(record.NextServiceDate) : null;
-                  const isUpcoming = record.NextServiceDate && isExpiringSoon(record.NextServiceDate, 30);
+            <div className="overflow-x-auto">
+              <table className="w-full hidden md:table">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Araç</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Tip</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Açıklama</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Tarih</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Maliyet</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Sonraki Bakım</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {maintenanceRecords.map((record) => {
+                    const daysUntil = record.NextServiceDate ? calculateDaysUntil(record.NextServiceDate) : null;
+                    const isUpcoming = record.NextServiceDate && isExpiringSoon(record.NextServiceDate, 30);
 
-                  return (
-                    <tr key={record.MaintenanceID} className={`hover:bg-neutral-50 ${isUpcoming ? 'bg-warning-50' : ''}`}>
-                      <td className="px-6 py-4 text-sm font-medium text-neutral-900">
-                        <div className="flex items-center">
-                          <CarIcon className="w-4 h-4 mr-2 text-neutral-500" />
-                          {record.Plate || '-'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-neutral-600">{record.Type}</td>
-                      <td className="px-6 py-4 text-sm text-neutral-600 max-w-xs truncate">
-                        {record.Description || '-'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-neutral-600">
-                        {formatDate(record.ServiceDate)}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-neutral-600">
-                        {record.Cost ? formatCurrency(record.Cost) : '-'}
-                      </td>
-                      <td className="px-6 py-4">
-                        {record.NextServiceDate ? (
-                          <div>
-                            <span className={`text-sm ${daysUntil !== null && daysUntil <= 7 ? 'text-danger-600 font-medium' : 'text-neutral-600'}`}>
-                              {formatDate(record.NextServiceDate)}
-                            </span>
-                            {daysUntil !== null && daysUntil >= 0 && (
-                              <span className={`text-xs ml-2 px-2 py-0.5 rounded-full ${
-                                daysUntil <= 7 ? 'bg-danger-100 text-danger-700' :
-                                daysUntil <= 30 ? 'bg-warning-100 text-warning-700' :
-                                'bg-neutral-100 text-neutral-700'
-                              }`}>
-                                {daysUntil} gün
+                    return (
+                      <tr key={record.MaintenanceID} className={`hover:bg-neutral-50 ${isUpcoming ? 'bg-warning-50' : ''}`}>
+                        <td className="px-6 py-4 text-sm font-medium text-neutral-900">
+                          <div className="flex items-center">
+                            <CarIcon className="w-4 h-4 mr-2 text-neutral-500" />
+                            {record.Plate || '-'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-neutral-600">{record.Type}</td>
+                        <td className="px-6 py-4 text-sm text-neutral-600 max-w-xs truncate">
+                          {record.Description || '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-neutral-600">
+                          {formatDate(record.ServiceDate)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-neutral-600">
+                          {record.Cost ? formatCurrency(record.Cost) : '-'}
+                        </td>
+                        <td className="px-6 py-4">
+                          {record.NextServiceDate ? (
+                            <div>
+                              <span className={`text-sm ${daysUntil !== null && daysUntil <= 7 ? 'text-danger-600 font-medium' : 'text-neutral-600'}`}>
+                                {formatDate(record.NextServiceDate)}
                               </span>
+                              {daysUntil !== null && daysUntil >= 0 && (
+                                <span className={`text-xs ml-2 px-2 py-0.5 rounded-full ${
+                                  daysUntil <= 7 ? 'bg-danger-100 text-danger-700' :
+                                  daysUntil <= 30 ? 'bg-warning-100 text-warning-700' :
+                                  'bg-neutral-100 text-neutral-700'
+                                }`}>
+                                  {daysUntil} gün
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-neutral-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-2">
+                            <PermissionGuard permission={PERMISSIONS.MAINTENANCE.EDIT}>
+                              <button
+                                onClick={() => handleOpenModal(record)}
+                                className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                                title="Düzenle"
+                              >
+                                <Edit className="w-4 h-4 text-primary-600" />
+                              </button>
+                            </PermissionGuard>
+                            <PermissionGuard permission={PERMISSIONS.MAINTENANCE.DELETE}>
+                              <button
+                                onClick={() => handleDelete(record.MaintenanceID)}
+                                className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
+                                title="Sil"
+                              >
+                                <Trash2 className="w-4 h-4 text-danger-600" />
+                              </button>
+                            </PermissionGuard>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-neutral-100">
+              {maintenanceRecords.map((record) => {
+                const daysUntil = record.NextServiceDate ? calculateDaysUntil(record.NextServiceDate) : null;
+                const isUpcoming = record.NextServiceDate && isExpiringSoon(record.NextServiceDate, 30);
+
+                return (
+                  <div
+                    key={record.MaintenanceID}
+                    className={`p-4 flex flex-col gap-3 ${isUpcoming ? 'bg-warning-50' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <CarIcon className="w-4 h-4 text-neutral-500" />
+                          <span className="text-sm font-semibold text-neutral-900">
+                            {record.Plate || '-'}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs text-neutral-500">
+                          {record.Type}
+                        </div>
+                        <div className="mt-2 text-xs text-neutral-500 space-y-1">
+                          <div>Bakım Tarihi: {formatDate(record.ServiceDate)}</div>
+                          {record.Description && (
+                            <div className="line-clamp-2">
+                              {record.Description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right text-xs text-neutral-500 space-y-2">
+                        <div className="font-semibold text-neutral-900">
+                          {record.Cost ? formatCurrency(record.Cost) : '-'}
+                        </div>
+                        {record.NextServiceDate && (
+                          <div className="space-y-1">
+                            <div>{formatDate(record.NextServiceDate)}</div>
+                            {daysUntil !== null && daysUntil >= 0 && (
+                              <div
+                                className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  daysUntil <= 7
+                                    ? 'bg-danger-100 text-danger-700'
+                                    : daysUntil <= 30
+                                    ? 'bg-warning-100 text-warning-700'
+                                    : 'bg-neutral-100 text-neutral-700'
+                                }`}
+                              >
+                                {daysUntil} gün
+                              </div>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-sm text-neutral-400">-</span>
                         )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <PermissionGuard permission={PERMISSIONS.MAINTENANCE.EDIT}>
-                            <button
-                              onClick={() => handleOpenModal(record)}
-                              className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
-                              title="Düzenle"
-                            >
-                              <Edit className="w-4 h-4 text-primary-600" />
-                            </button>
-                          </PermissionGuard>
-                          <PermissionGuard permission={PERMISSIONS.MAINTENANCE.DELETE}>
-                            <button
-                              onClick={() => handleDelete(record.MaintenanceID)}
-                              className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
-                              title="Sil"
-                            >
-                              <Trash2 className="w-4 h-4 text-danger-600" />
-                            </button>
-                          </PermissionGuard>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
 
-            {maintenanceRecords.length === 0 && (
+                    <div className="flex items-center justify-end pt-2 border-t border-neutral-100 mt-2">
+                      <div className="flex items-center space-x-2">
+                        <PermissionGuard permission={PERMISSIONS.MAINTENANCE.EDIT}>
+                          <button
+                            onClick={() => handleOpenModal(record)}
+                            className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                            title="Düzenle"
+                          >
+                            <Edit className="w-4 h-4 text-primary-600" />
+                          </button>
+                        </PermissionGuard>
+                        <PermissionGuard permission={PERMISSIONS.MAINTENANCE.DELETE}>
+                          <button
+                            onClick={() => handleDelete(record.MaintenanceID)}
+                            className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-4 h-4 text-danger-600" />
+                          </button>
+                        </PermissionGuard>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!isLoadingRecords && maintenanceRecords.length === 0 && (
               <div className="p-8 text-center text-neutral-500">
                 Bakım kaydı bulunmuyor
               </div>
@@ -352,66 +436,125 @@ const Maintenance = () => {
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
-             {isLoadingPredictions ? (
-                <div className="p-8 text-center text-neutral-500">Yükleniyor...</div>
-             ) : (
-            <table className="w-full">
-              <thead className="bg-neutral-50 border-b border-neutral-200">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Araç</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Mevcut KM</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Günlük Ort. KM</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Son Bakım KM</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Sonraki Bakım (Hedef)</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Kalan KM</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Tahmini Tarih</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Durum</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {predictions.map((p) => (
-                  <tr key={p.VehicleID} className="hover:bg-neutral-50">
-                    <td className="px-6 py-4 text-sm font-medium text-neutral-900">
-                      <div className="flex flex-col">
-                        <span>{p.Plate}</span>
-                        <span className="text-xs text-neutral-500">{p.Make} {p.Model}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{p.CurrentKm?.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{p.AvgDailyKm?.toLocaleString() || '-'}</td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">
-                       {p.LastServiceKm ? (
-                          <div className="flex flex-col">
-                             <span>{p.LastServiceKm.toLocaleString()}</span>
-                             <span className="text-xs text-neutral-500">{p.LastServiceDate ? formatDate(p.LastServiceDate) : ''}</span>
+            {isLoadingPredictions ? (
+              <div className="p-8 text-center text-neutral-500">Yükleniyor...</div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full hidden md:table">
+                    <thead className="bg-neutral-50 border-b border-neutral-200">
+                      <tr>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Araç</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Mevcut KM</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Günlük Ort. KM</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Son Bakım KM</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Sonraki Bakım (Hedef)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Kalan KM</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Tahmini Tarih</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Durum</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {predictions.map((p) => (
+                        <tr key={p.VehicleID} className="hover:bg-neutral-50">
+                          <td className="px-6 py-4 text-sm font-medium text-neutral-900">
+                            <div className="flex flex-col">
+                              <span>{p.Plate}</span>
+                              <span className="text-xs text-neutral-500">{p.Make} {p.Model}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">{p.CurrentKm?.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">{p.AvgDailyKm?.toLocaleString() || '-'}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">
+                            {p.LastServiceKm ? (
+                              <div className="flex flex-col">
+                                <span>{p.LastServiceKm.toLocaleString()}</span>
+                                <span className="text-xs text-neutral-500">{p.LastServiceDate ? formatDate(p.LastServiceDate) : ''}</span>
+                              </div>
+                            ) : '-'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">{p.NextServiceKm?.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">{p.RemainingKm?.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">
+                            {p.EstServiceDate ? (
+                              <div className="flex flex-col">
+                                <span>{formatDate(p.EstServiceDate)}</span>
+                                <span className="text-xs text-neutral-500">{p.EstDaysRemaining} gün kaldı</span>
+                              </div>
+                            ) : '-'}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              p.Status === 'Overdue' ? 'bg-danger-100 text-danger-700' :
+                              p.Status === 'Due Soon' ? 'bg-warning-100 text-warning-700' :
+                              'bg-success-100 text-success-700'
+                            }`}>
+                              {p.Status === 'Overdue' ? 'Gecikmiş' : 
+                              p.Status === 'Due Soon' ? 'Yaklaşıyor' : 'İyi Durumda'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="md:hidden divide-y divide-neutral-100">
+                  {predictions.map((p) => (
+                    <div key={p.VehicleID} className="p-4 flex flex-col gap-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-neutral-900">
+                            {p.Plate}
                           </div>
-                       ) : '-'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{p.NextServiceKm?.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{p.RemainingKm?.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">
-                      {p.EstServiceDate ? (
-                         <div className="flex flex-col">
-                            <span>{formatDate(p.EstServiceDate)}</span>
-                            <span className="text-xs text-neutral-500">{p.EstDaysRemaining} gün kaldı</span>
-                         </div>
-                      ) : '-'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        p.Status === 'Overdue' ? 'bg-danger-100 text-danger-700' :
-                        p.Status === 'Due Soon' ? 'bg-warning-100 text-warning-700' :
-                        'bg-success-100 text-success-700'
-                      }`}>
-                        {p.Status === 'Overdue' ? 'Gecikmiş' : 
-                         p.Status === 'Due Soon' ? 'Yaklaşıyor' : 'İyi Durumda'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-             )}
+                          <div className="text-xs text-neutral-500">
+                            {p.Make} {p.Model}
+                          </div>
+                          <div className="mt-2 text-xs text-neutral-500 space-y-1">
+                            <div>Mevcut KM: {p.CurrentKm?.toLocaleString() ?? '-'}</div>
+                            <div>Günlük Ort. KM: {p.AvgDailyKm?.toLocaleString() ?? '-'}</div>
+                            {p.LastServiceKm && (
+                              <div>
+                                Son Bakım: {p.LastServiceKm.toLocaleString()} km
+                                {p.LastServiceDate && (
+                                  <span> ({formatDate(p.LastServiceDate)})</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-neutral-500 space-y-2">
+                          <div>
+                            Hedef KM: {p.NextServiceKm?.toLocaleString() ?? '-'}
+                          </div>
+                          <div>
+                            Kalan KM: {p.RemainingKm?.toLocaleString() ?? '-'}
+                          </div>
+                          {p.EstServiceDate && (
+                            <div className="space-y-1">
+                              <div>{formatDate(p.EstServiceDate)}</div>
+                              <div className="text-[11px]">
+                                {p.EstDaysRemaining} gün kaldı
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              p.Status === 'Overdue' ? 'bg-danger-100 text-danger-700' :
+                              p.Status === 'Due Soon' ? 'bg-warning-100 text-warning-700' :
+                              'bg-success-100 text-success-700'
+                            }`}>
+                              {p.Status === 'Overdue' ? 'Gecikmiş' : 
+                              p.Status === 'Due Soon' ? 'Yaklaşıyor' : 'İyi Durumda'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             {predictions.length === 0 && !isLoadingPredictions && (
               <div className="p-8 text-center text-neutral-500">
                 Veri bulunamadı.

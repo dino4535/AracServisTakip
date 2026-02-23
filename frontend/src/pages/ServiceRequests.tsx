@@ -216,23 +216,23 @@ const ServiceRequests = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center space-x-3">
             <ClipboardList className="w-6 h-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-neutral-900">Servis Talepleri</h1>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:space-x-3">
             <input
               type="text"
               value={searchInput}
               onChange={onSearchChange}
               placeholder="Plaka, açıklama, firma, talep eden..."
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
             />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full md:w-auto px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
             >
               <option value="">Tüm Durumlar</option>
               <option value="PENDING">Bekleyen</option>
@@ -240,7 +240,7 @@ const ServiceRequests = () => {
               <option value="COMPLETED">Tamamlandı</option>
             </select>
             <PermissionGuard permission={PERMISSIONS.SERVICE_REQUESTS.ADD}>
-              <Button onClick={() => handleOpenModal()}>
+              <Button onClick={() => handleOpenModal()} className="w-full md:w-auto justify-center">
                 <Plus className="w-4 h-4 mr-2" />
                 Talep Ekle
               </Button>
@@ -282,7 +282,7 @@ const ServiceRequests = () => {
             </div>
           )}
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full hidden md:table">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Araç</th>
@@ -393,6 +393,113 @@ const ServiceRequests = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="md:hidden divide-y divide-neutral-100">
+            {serviceRequests.map((request) => (
+              <div key={request.RequestID} className="p-4 flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <CarIcon className="w-4 h-4 text-neutral-500" />
+                      <span className="text-sm font-semibold text-neutral-900">
+                        {request.Plate || '-'}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500 space-y-1">
+                      <div className="line-clamp-2">
+                        {request.Description}
+                      </div>
+                      <div>
+                        Talep Eden: {request.RequesterName || '-'}
+                      </div>
+                      <div>
+                        {formatDateTime(request.RequestDate)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-neutral-500 space-y-2">
+                    <div>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.Status)}`}>
+                        {request.Status === 'PENDING' ? 'Bekleyen' :
+                         request.Status === 'IN_PROGRESS' ? 'İşlemde' :
+                         request.Status === 'COMPLETED' ? 'Tamamlandı' : request.Status}
+                      </span>
+                    </div>
+                    <div>
+                      <span className={`inline-block w-2 h-2 rounded-full mr-1 ${getPriorityColor(request.Priority).replace('bg-', 'bg-opacity-50 ')}`}></span>
+                      <span className="font-medium text-neutral-800 text-xs">
+                        {request.Priority}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-neutral-900">
+                      {request.ActualCost ? formatCurrency(request.ActualCost) :
+                       request.EstimatedCost ? `~${formatCurrency(request.EstimatedCost)}` : '-'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end pt-2 border-t border-neutral-100 mt-2">
+                  <div className="flex items-center space-x-2">
+                    {request.Status === 'PENDING' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.APPROVE) && (
+                      <button
+                        onClick={() => setApproveId(request.RequestID)}
+                        className="p-1.5 hover:bg-success-50 rounded-lg transition-colors"
+                        title="Onayla"
+                      >
+                        <CheckCircle className="w-4 h-4 text-success-600" />
+                      </button>
+                    )}
+                    {request.Status === 'IN_PROGRESS' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.EDIT) && (
+                      <button
+                        onClick={() => setReturnId(request.RequestID)}
+                        className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Servisten Döndü Olarak İşaretle"
+                      >
+                        <CarIcon className="w-4 h-4 text-blue-600" />
+                      </button>
+                    )}
+                    {request.Status === 'RETURNED' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.APPROVE) && (
+                      <button
+                        onClick={() => setCompleteId(request.RequestID)}
+                        className="p-1.5 hover:bg-success-50 rounded-lg transition-colors"
+                        title="Tamamla ve Maliyet Gir"
+                      >
+                        <PlayCircle className="w-4 h-4 text-success-600" />
+                      </button>
+                    )}
+                    <PermissionGuard permission={PERMISSIONS.SERVICE_REQUESTS.EDIT}>
+                      <button
+                        onClick={() => handleOpenModal(request)}
+                        className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                        title="Düzenle"
+                      >
+                        <Edit className="w-4 h-4 text-primary-600" />
+                      </button>
+                    </PermissionGuard>
+                    {request.Status !== 'COMPLETED' && (
+                      <PermissionGuard permission={PERMISSIONS.SERVICE_REQUESTS.DELETE}>
+                        <button
+                          onClick={() => setDeleteId(request.RequestID)}
+                          className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
+                          title="Sil"
+                        >
+                          <Trash2 className="w-4 h-4 text-danger-600" />
+                        </button>
+                      </PermissionGuard>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {!isLoading && serviceRequests.length === 0 && (
+            <div className="p-8 text-center text-neutral-500">
+              Servis talebi bulunmuyor
+            </div>
+          )}
+
           <Pagination
             currentPage={currentPage}
             totalPages={pagination.totalPages}
@@ -400,13 +507,6 @@ const ServiceRequests = () => {
             totalItems={pagination.total}
             itemsPerPage={50}
           />
-        </div>
-
-        {serviceRequests.length === 0 && (
-            <div className="p-8 text-center text-neutral-500">
-              Servis talebi bulunmuyor
-            </div>
-          )}
         </div>
       </div>
 

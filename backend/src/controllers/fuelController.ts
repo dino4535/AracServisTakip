@@ -51,7 +51,7 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
     }
 
     if (endDate) {
-      whereClause += ` AND f.FuelDate <= @EndDate`;
+      whereClause += ` AND f.FuelDate < DATEADD(day, 1, @EndDate)`;
     }
 
     if (search) {

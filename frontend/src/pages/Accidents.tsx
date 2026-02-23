@@ -172,13 +172,13 @@ const Accidents = () => {
 
   return (
     <Layout>
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900">Kaza ve Hasar Yönetimi</h1>
           <p className="text-neutral-600 mt-1">Araç kaza kayıtlarını ve hasar süreçlerini buradan takip edebilirsiniz.</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <div className="w-64">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:space-x-3">
+          <div className="w-full md:w-64">
             <input
               type="text"
               value={searchInput}
@@ -188,7 +188,7 @@ const Accidents = () => {
             />
           </div>
           <PermissionGuard permission={PERMISSIONS.ACCIDENTS.ADD}>
-            <Button onClick={() => handleOpenModal()}>
+            <Button onClick={() => handleOpenModal()} className="w-full md:w-auto justify-center">
               <Plus className="w-4 h-4 mr-2" />
               Yeni Kaza Kaydı
             </Button>
@@ -203,28 +203,22 @@ const Accidents = () => {
       </div>
 
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-neutral-50 border-b border-neutral-200">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Araç</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Sürücü</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Kaza Yeri</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Tarih</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Rapor No</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Tutar</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Durum</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase tracking-wider">İşlemler</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-200">
-            {(accidents || []).length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full hidden md:table">
+            <thead className="bg-neutral-50 border-b border-neutral-200">
               <tr>
-                <td colSpan={8} className="px-6 py-8 text-center text-neutral-500">
-                  Henüz kaza kaydı bulunmuyor.
-                </td>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Araç</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Sürücü</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Kaza Yeri</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Tarih</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Rapor No</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Tutar</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Durum</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase tracking-wider">İşlemler</th>
               </tr>
-            ) : (
-              (accidents || []).map((accident) => (
+            </thead>
+            <tbody className="divide-y divide-neutral-200">
+              {(accidents || []).map((accident) => (
                 <tr key={accident.AccidentID} className="hover:bg-neutral-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -287,10 +281,87 @@ const Accidents = () => {
                     </div>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="md:hidden divide-y divide-neutral-200">
+          {(accidents || []).map((accident) => (
+            <div key={accident.AccidentID} className="p-4 flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 flex-shrink-0 bg-red-100 rounded-lg flex items-center justify-center text-red-600">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-neutral-900">
+                      {accident.Plate}
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                      {accident.Make} {accident.Model}
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500 space-y-0.5">
+                      <div>{formatDate(accident.AccidentDate)}</div>
+                      {accident.Location && <div>{accident.Location}</div>}
+                      {accident.ReportNumber && (
+                        <div>Rapor No: {accident.ReportNumber}</div>
+                      )}
+                      {accident.DriverName && (
+                        <div>Sürücü: {accident.DriverName}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right text-xs space-y-2">
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${getStatusBadgeClass(accident.Status || 'OPEN')}`}>
+                    {getStatusText(accident.Status || 'OPEN')}
+                  </span>
+                  <div className="font-semibold text-neutral-900">
+                    {formatCurrency(accident.Cost || 0)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-2 border-t border-neutral-100 mt-2">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => handleOpenFiles(accident)}
+                    className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"
+                    title="Dosyalar"
+                  >
+                    <Paperclip className="w-4 h-4 text-neutral-600" />
+                  </button>
+                  <PermissionGuard permission={PERMISSIONS.ACCIDENTS.EDIT}>
+                    <button
+                      onClick={() => handleOpenModal(accident)}
+                      className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                      title="Düzenle"
+                    >
+                      <Edit className="w-4 h-4 text-primary-600" />
+                    </button>
+                  </PermissionGuard>
+                  <PermissionGuard permission={PERMISSIONS.ACCIDENTS.DELETE}>
+                    <button
+                      onClick={() => handleDelete(accident.AccidentID)}
+                      className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
+                      title="Sil"
+                    >
+                      <Trash2 className="w-4 h-4 text-danger-600" />
+                    </button>
+                  </PermissionGuard>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {!loading && (accidents || []).length === 0 && (
+          <div className="p-8 text-center text-neutral-500">
+            Henüz kaza kaydı bulunmuyor.
+          </div>
+        )}
+
         <Pagination
           currentPage={currentPage}
           totalPages={pagination.totalPages}
