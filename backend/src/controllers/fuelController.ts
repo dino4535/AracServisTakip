@@ -57,8 +57,7 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
     if (search) {
       whereClause += ` AND (
         v.Plate LIKE '%' + @SearchTerm + '%' OR
-        f.FuelStation LIKE '%' + @SearchTerm + '%' OR
-        f.InvoiceNo LIKE '%' + @SearchTerm + '%'
+        f.FuelStation LIKE '%' + @SearchTerm + '%'
       )`;
     }
 
