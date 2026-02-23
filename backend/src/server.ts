@@ -19,7 +19,14 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5176',
+    'http://77.83.37.229:4010',
+    'http://arac.dinogida.com.tr'
+  ],
   credentials: true,
 }));
 
