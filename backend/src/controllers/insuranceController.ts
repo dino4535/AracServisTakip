@@ -433,12 +433,54 @@ export const getInsuranceSummary = async (req: AuthRequest, res: Response): Prom
           MIN(CASE WHEN ir.EndDate >= CAST(GETDATE() AS DATE) THEN ir.EndDate END) as NextRenewalDate,
           CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END as HasAnyPolicy,
           CASE WHEN SUM(CASE WHEN ir.EndDate >= CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 0 END as HasActivePolicy,
-          MIN(CASE WHEN ir.Type IN ('Traffic', 'Trafik Sigortası') AND ir.EndDate >= CAST(GETDATE() AS DATE) THEN ir.EndDate END) as NextTrafficEndDate,
-          MIN(CASE WHEN ir.Type IN ('Kasko', 'Kasko Sigortası') AND ir.EndDate >= CAST(GETDATE() AS DATE) THEN ir.EndDate END) as NextKaskoEndDate,
-          CASE WHEN SUM(CASE WHEN ir.Type IN ('Traffic', 'Trafik Sigortası') THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 0 END as HasTrafficPolicy,
-          CASE WHEN SUM(CASE WHEN ir.Type IN ('Traffic', 'Trafik Sigortası') AND ir.EndDate >= CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 0 END as HasActiveTrafficPolicy,
-          CASE WHEN SUM(CASE WHEN ir.Type IN ('Kasko', 'Kasko Sigortası') THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 0 END as HasKaskoPolicy,
-          CASE WHEN SUM(CASE WHEN ir.Type IN ('Kasko', 'Kasko Sigortası') AND ir.EndDate >= CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 0 END as HasActiveKaskoPolicy
+          MIN(
+            CASE
+              WHEN UPPER(ir.Type) IN ('TRAFFIC', 'TRAFIK', 'TRAFİK', 'TRAFIK SIGORTASI', 'TRAFİK SİGORTASI', 'TSP')
+                AND ir.EndDate >= CAST(GETDATE() AS DATE)
+              THEN ir.EndDate
+            END
+          ) as NextTrafficEndDate,
+          MIN(
+            CASE
+              WHEN UPPER(ir.Type) IN ('KASKO', 'KASKO SIGORTASI', 'KASKO SİGORTASI', 'KSP')
+                AND ir.EndDate >= CAST(GETDATE() AS DATE)
+              THEN ir.EndDate
+            END
+          ) as NextKaskoEndDate,
+          CASE
+            WHEN SUM(
+              CASE
+                WHEN UPPER(ir.Type) IN ('TRAFFIC', 'TRAFIK', 'TRAFİK', 'TRAFIK SIGORTASI', 'TRAFİK SİGORTASI', 'TSP')
+                THEN 1 ELSE 0
+              END
+            ) > 0 THEN 1 ELSE 0
+          END as HasTrafficPolicy,
+          CASE
+            WHEN SUM(
+              CASE
+                WHEN UPPER(ir.Type) IN ('TRAFFIC', 'TRAFIK', 'TRAFİK', 'TRAFIK SIGORTASI', 'TRAFİK SİGORTASI', 'TSP')
+                  AND ir.EndDate >= CAST(GETDATE() AS DATE)
+                THEN 1 ELSE 0
+              END
+            ) > 0 THEN 1 ELSE 0
+          END as HasActiveTrafficPolicy,
+          CASE
+            WHEN SUM(
+              CASE
+                WHEN UPPER(ir.Type) IN ('KASKO', 'KASKO SIGORTASI', 'KASKO SİGORTASI', 'KSP')
+                THEN 1 ELSE 0
+              END
+            ) > 0 THEN 1 ELSE 0
+          END as HasKaskoPolicy,
+          CASE
+            WHEN SUM(
+              CASE
+                WHEN UPPER(ir.Type) IN ('KASKO', 'KASKO SIGORTASI', 'KASKO SİGORTASI', 'KSP')
+                  AND ir.EndDate >= CAST(GETDATE() AS DATE)
+                THEN 1 ELSE 0
+              END
+            ) > 0 THEN 1 ELSE 0
+          END as HasActiveKaskoPolicy
         FROM InsuranceRecords ir
         WHERE ir.VehicleID = v.VehicleID
       ) ins

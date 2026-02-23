@@ -732,8 +732,8 @@ const Insurance = () => {
                 required
               >
                 <option value="">Seçiniz</option>
-                <option value="Trafik Sigortası">Trafik Sigortası</option>
-                <option value="Kasko">Kasko</option>
+                <option value="TSP">Trafik Sigortası</option>
+                <option value="KSP">Kasko</option>
               </select>
             </div>
 
