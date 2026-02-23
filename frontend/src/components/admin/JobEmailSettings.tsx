@@ -1,0 +1,221 @@
+import { useEffect, useState } from 'react';
+import { adminService } from '../../services/adminService';
+import Button from '../common/Button';
+import { Save, AlertCircle, CheckCircle } from 'lucide-react';
+
+type Message = { type: 'success' | 'error'; text: string } | null;
+
+const JobEmailSettings = () => {
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<Message>(null);
+
+  const [inspectionReminderEmails, setInspectionReminderEmails] = useState(true);
+  const [inspectionOverdueEmails, setInspectionOverdueEmails] = useState(true);
+  const [insuranceReminderEmails, setInsuranceReminderEmails] = useState(true);
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      setLoading(true);
+
+      const [
+        inspectionReminder,
+        inspectionOverdue,
+        insuranceReminder,
+      ] = await Promise.all([
+        safeGetSetting('job_inspection_reminder_emails'),
+        safeGetSetting('job_inspection_overdue_emails'),
+        safeGetSetting('job_insurance_reminder_emails'),
+      ]);
+
+      setInspectionReminderEmails(inspectionReminder !== 'false');
+      setInspectionOverdueEmails(inspectionOverdue !== 'false');
+      setInsuranceReminderEmails(insuranceReminder !== 'false');
+    } catch (error) {
+      console.error('Error fetching job email settings:', error);
+      setMessage({
+        type: 'error',
+        text: 'Job e-posta ayarları yüklenirken bir hata oluştu.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const safeGetSetting = async (key: string): Promise<string> => {
+    try {
+      const value = await adminService.getSetting(key);
+      return value;
+    } catch {
+      return 'true';
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      setMessage(null);
+
+      await Promise.all([
+        adminService.updateSetting(
+          'job_inspection_reminder_emails',
+          String(inspectionReminderEmails)
+        ),
+        adminService.updateSetting(
+          'job_inspection_overdue_emails',
+          String(inspectionOverdueEmails)
+        ),
+        adminService.updateSetting(
+          'job_insurance_reminder_emails',
+          String(insuranceReminderEmails)
+        ),
+      ]);
+
+      setMessage({
+        type: 'success',
+        text: 'Job e-posta ayarları başarıyla kaydedildi.',
+      });
+
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('Error saving job email settings:', error);
+      setMessage({
+        type: 'error',
+        text: 'Job e-posta ayarları kaydedilirken bir hata oluştu.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h2 className="text-xl font-semibold mb-6">Job E-posta Ayarları</h2>
+
+      {message && (
+        <div
+          className={`p-4 mb-6 rounded-md flex items-center ${
+            message.type === 'success'
+              ? 'bg-green-50 text-green-700'
+              : 'bg-red-50 text-red-700'
+          }`}
+        >
+          {message.type === 'success' ? (
+            <CheckCircle size={20} className="mr-2" />
+          ) : (
+            <AlertCircle size={20} className="mr-2" />
+          )}
+          {message.text}
+        </div>
+      )}
+
+      <div className="space-y-6">
+        <div className="border-b pb-4">
+          <h3 className="text-lg font-medium mb-3">Muayene Hatırlatma Mailleri</h3>
+          <p className="text-sm text-neutral-600 mb-3">
+            Yaklaşan muayene tarihleri için sürücü, araç yöneticisi ve şirket adminlerine
+            gönderilen otomatik e-posta bildirimlerini yönetir.
+          </p>
+          <label className="flex items-center cursor-pointer">
+            <div className="relative">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={inspectionReminderEmails}
+                onChange={(e) => setInspectionReminderEmails(e.target.checked)}
+              />
+              <div
+                className={`block w-14 h-8 rounded-full ${
+                  inspectionReminderEmails ? 'bg-green-500' : 'bg-gray-300'
+                }`}
+              ></div>
+              <div
+                className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${
+                  inspectionReminderEmails ? 'transform translate-x-6' : ''
+                }`}
+              ></div>
+            </div>
+            <div className="ml-3 text-gray-700 font-medium">
+              Muayene hatırlatma maillerini gönder
+            </div>
+          </label>
+        </div>
+
+        <div className="border-b pb-4">
+          <h3 className="text-lg font-medium mb-3">Vizesi Geçmiş Araç Mailleri</h3>
+          <p className="text-sm text-neutral-600 mb-3">
+            Muayene vize tarihi geçmiş araçlar için araç yöneticisi ve şirket adminlerine
+            gönderilen uyarı e-postalarını yönetir.
+          </p>
+          <label className="flex items-center cursor-pointer">
+            <div className="relative">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={inspectionOverdueEmails}
+                onChange={(e) => setInspectionOverdueEmails(e.target.checked)}
+              />
+              <div
+                className={`block w-14 h-8 rounded-full ${
+                  inspectionOverdueEmails ? 'bg-green-500' : 'bg-gray-300'
+                }`}
+              ></div>
+              <div
+                className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${
+                  inspectionOverdueEmails ? 'transform translate-x-6' : ''
+                }`}
+              ></div>
+            </div>
+            <div className="ml-3 text-gray-700 font-medium">
+              Vizesi geçmiş araç maillerini gönder
+            </div>
+          </label>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-medium mb-3">Sigorta/Kasko Hatırlatma Mailleri</h3>
+          <p className="text-sm text-neutral-600 mb-3">
+            Yaklaşan sigorta ve kasko bitiş tarihleri için şirket adminlerine gönderilen
+            günlük özet e-postalarını yönetir.
+          </p>
+          <label className="flex items-center cursor-pointer">
+            <div className="relative">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={insuranceReminderEmails}
+                onChange={(e) => setInsuranceReminderEmails(e.target.checked)}
+              />
+              <div
+                className={`block w-14 h-8 rounded-full ${
+                  insuranceReminderEmails ? 'bg-green-500' : 'bg-gray-300'
+                }`}
+              ></div>
+              <div
+                className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${
+                  insuranceReminderEmails ? 'transform translate-x-6' : ''
+                }`}
+              ></div>
+            </div>
+            <div className="ml-3 text-gray-700 font-medium">
+              Sigorta/Kasko hatırlatma maillerini gönder
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div className="flex justify-end mt-6">
+        <Button variant="primary" onClick={handleSave} disabled={loading}>
+          <Save size={18} className="mr-2" />
+          Kaydet
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export default JobEmailSettings;
+

@@ -1,0 +1,48 @@
+############################
+# Genel
+############################
+node_modules/
+dist/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+############################
+# Ortam dosyaları
+############################
+.env
+.env.*
+backend/.env
+frontend/.env
+
+############################
+# Derlenmiş çıktılar
+############################
+backend/dist/
+frontend/dist/
+
+############################
+# Geçici / yerel dosyalar
+############################
+*.log
+*.tmp
+*.swp
+*.DS_Store
+Thumbs.db
+
+############################
+# Büyük veri / dış kaynak dosyaları
+############################
+*.xlsx
+*.xls
+*.csv
+*.rar
+*.zip
+*.7z
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+
