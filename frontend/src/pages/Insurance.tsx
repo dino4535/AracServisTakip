@@ -200,7 +200,7 @@ const Insurance = () => {
   const getNoPolicyVehicles = () => {
     const normalizedSearch = (searchTerm || '').trim().toLowerCase();
     return insuranceSummary
-      .filter(item => !item.HasTrafficPolicy || !item.HasKaskoPolicy)
+      .filter(item => !item.HasActiveTrafficPolicy || !item.HasActiveKaskoPolicy)
       .filter(item => {
         if (!normalizedSearch) return true;
         const plate = (item.Plate || '').toLowerCase();
@@ -216,11 +216,11 @@ const Insurance = () => {
 
   const getMissingPolicyText = (item: InsuranceSummary) => {
     const missing: string[] = [];
-    if (!item.HasTrafficPolicy) {
-      missing.push('Trafik sigorta poliçesi yok');
+    if (!item.HasActiveTrafficPolicy) {
+      missing.push('Aktif trafik sigorta poliçesi yok');
     }
-    if (!item.HasKaskoPolicy) {
-      missing.push('Kasko poliçesi yok');
+    if (!item.HasActiveKaskoPolicy) {
+      missing.push('Aktif kasko poliçesi yok');
     }
     if (missing.length === 0) {
       return 'Tüm poliçeler mevcut';
