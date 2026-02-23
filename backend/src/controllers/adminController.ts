@@ -1004,7 +1004,7 @@ export const sendWelcomeEmail = async (req: AuthRequest, res: Response): Promise
           u.Email,
           u.IsActive,
           c.Name as CompanyName,
-          STRING_AGG(DISTINCT r.Name, ',') as Roles
+          STRING_AGG(r.Name, ',') as Roles
         FROM Users u
         LEFT JOIN Companies c ON u.CompanyID = c.CompanyID
         LEFT JOIN UserRoles ur ON u.UserID = ur.UserID
