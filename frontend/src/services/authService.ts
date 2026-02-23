@@ -40,4 +40,14 @@ export const authService = {
   getToken: (): string | null => {
     return localStorage.getItem('token');
   },
+
+  requestPasswordReset: async (email: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>('/auth/forgot-password', { email });
+    return response.data;
+  },
+
+  resetPassword: async (token: string, password: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>('/auth/reset-password', { token, password });
+    return response.data;
+  },
 };

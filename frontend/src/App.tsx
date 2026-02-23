@@ -16,6 +16,8 @@ import Reports from './pages/Reports';
 import MonthlyKmEntry from './pages/MonthlyKmEntry';
 import Accidents from './pages/Accidents';
 import VehicleOverview from './pages/VehicleOverview';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './utils/ProtectedRoute';
  
 
@@ -33,6 +35,8 @@ function App() {
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/" element={
           <ProtectedRoute>
             <Dashboard />

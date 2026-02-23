@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, getProfile, getPermissions } from '../controllers/authController';
+import { register, login, getProfile, getPermissions, forgotPassword, resetPassword } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -109,5 +109,56 @@ router.get('/profile', authenticate, getProfile);
  *         description: Yetki listesi
  */
 router.get('/permissions', authenticate, getPermissions);
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Şifre sıfırlama bağlantısı gönderir
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Eğer e-posta kayıtlıysa şifre sıfırlama bağlantısı gönderilir
+ */
+router.post('/forgot-password', forgotPassword);
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Şifreyi verilen token ile sıfırlar
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Şifre başarıyla güncellendi
+ *       400:
+ *         description: Geçersiz veya süresi dolmuş bağlantı
+ */
+router.post('/reset-password', resetPassword);
 
 export default router;
