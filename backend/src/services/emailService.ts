@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export const sendEmail = async (to: string, subject: string, html: string): Promise<void> => {
+export const sendEmail = async (to: string, subject: string, html: string): Promise<boolean> => {
   try {
     const fromEmail = process.env.EMAIL_FROM && process.env.EMAIL_FROM.includes('@')
       ? process.env.EMAIL_FROM
@@ -29,7 +29,9 @@ export const sendEmail = async (to: string, subject: string, html: string): Prom
     });
 
     console.log(`📧 Email sent to ${to}: ${subject}`);
+    return true;
   } catch (error) {
     console.error('❌ Error sending email:', error);
+    return false;
   }
-};
+}

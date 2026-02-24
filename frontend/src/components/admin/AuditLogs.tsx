@@ -44,6 +44,9 @@ const ACTIONS = [
   { value: 'CREATE_SERVICE_COMPANY', label: 'Servis Firması Ekleme' },
   { value: 'UPDATE_SERVICE_COMPANY', label: 'Servis Firması Güncelleme' },
   { value: 'DELETE_SERVICE_COMPANY', label: 'Servis Firması Silme' },
+  { value: 'JOB_INSPECTION_REMINDER_EMAIL', label: 'Job Muayene Hatırlatma E-postası' },
+  { value: 'JOB_INSPECTION_OVERDUE_EMAIL', label: 'Job Muayene Vizesi Geçmiş E-postası' },
+  { value: 'JOB_INSURANCE_REMINDER_EMAIL', label: 'Job Sigorta/Kasko Hatırlatma E-postası' },
 ].sort((a, b) => a.label.localeCompare(b.label, 'tr'));
 
 const TABLES = [

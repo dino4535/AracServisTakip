@@ -4,6 +4,7 @@ import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { createNotification } from '../services/notificationService';
 import { sendEmail } from '../services/emailService';
+import { logAudit } from '../services/auditService';
 
 const REMINDER_DAYS = [30, 20, 15, 10, 7, 5, 3, 2, 1];
 
@@ -105,7 +106,23 @@ const checkInspectionReminders = async () => {
               record.InspectionID
             );
             if (record.DriverEmail) {
-              await sendEmail(record.DriverEmail, 'Muayene Hatırlatması', message);
+              const success = await sendEmail(record.DriverEmail, 'Muayene Hatırlatması', message);
+              await logAudit(
+                undefined,
+                'JOB_INSPECTION_REMINDER_EMAIL',
+                'JobEmails',
+                record.InspectionID,
+                {
+                  jobType: 'INSPECTION_REMINDER',
+                  recipientType: 'DRIVER',
+                  recipientEmail: record.DriverEmail,
+                  companyId: record.CompanyID,
+                  plate: record.Plate,
+                  daysUntil,
+                  success
+                },
+                'SYSTEM_CRON'
+              );
             }
         }
 
@@ -119,7 +136,23 @@ const checkInspectionReminders = async () => {
               record.InspectionID
             );
             if (record.ManagerEmail) {
-              await sendEmail(record.ManagerEmail, 'Muayene Hatırlatması', message);
+              const success = await sendEmail(record.ManagerEmail, 'Muayene Hatırlatması', message);
+              await logAudit(
+                undefined,
+                'JOB_INSPECTION_REMINDER_EMAIL',
+                'JobEmails',
+                record.InspectionID,
+                {
+                  jobType: 'INSPECTION_REMINDER',
+                  recipientType: 'MANAGER',
+                  recipientEmail: record.ManagerEmail,
+                  companyId: record.CompanyID,
+                  plate: record.Plate,
+                  daysUntil,
+                  success
+                },
+                'SYSTEM_CRON'
+              );
             }
         }
 
@@ -151,7 +184,22 @@ const checkInspectionReminders = async () => {
 
         for (const admin of admins) {
             await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Günlük Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined);
-            await sendEmail(admin.Email, 'Günlük Muayene Hatırlatmaları', htmlTable);
+            const success = await sendEmail(admin.Email, 'Günlük Muayene Hatırlatmaları', htmlTable);
+            await logAudit(
+              undefined,
+              'JOB_INSPECTION_REMINDER_EMAIL',
+              'JobEmails',
+              inspections[0].InspectionID,
+              {
+                jobType: 'INSPECTION_REMINDER_ADMIN_BULK',
+                recipientType: 'ADMIN',
+                recipientEmail: admin.Email,
+                companyId: inspections[0].CompanyID,
+                count: inspections.length,
+                success
+              },
+              'SYSTEM_CRON'
+            );
         }
     }
 
@@ -204,7 +252,7 @@ const checkInspectionOverdue = async () => {
       const message = `Araç ${record.Plate} için muayene vize tarihi ${dateStr} itibarıyla geçmiştir. Yasal yükümlülükler ve olası ceza riskleri nedeniyle en kısa sürede muayene randevusu alınması ve işlemlerin tamamlanması gerekmektedir. (Gecikme: ${daysOverdue} gün)`;
 
       // 1. Manager bildirimi (varsa)
-      if (record.ManagerID) {
+        if (record.ManagerID) {
         await createNotification(
           record.ManagerID,
           'INSPECTION_OVERDUE_MANAGER',
@@ -225,10 +273,26 @@ const checkInspectionOverdue = async () => {
             <p>Gecikme süresi: <strong>${daysOverdue} gün</strong>.</p>
           `;
 
-          await sendEmail(
+          const success = await sendEmail(
             record.ManagerEmail,
             `Muayene Vizesi Geçmiş Araç: ${record.Plate}`,
             html
+          );
+          await logAudit(
+            undefined,
+            'JOB_INSPECTION_OVERDUE_EMAIL',
+            'JobEmails',
+            record.InspectionID,
+            {
+              jobType: 'INSPECTION_OVERDUE_MANAGER',
+              recipientType: 'MANAGER',
+              recipientEmail: record.ManagerEmail,
+              companyId: record.CompanyID,
+              plate: record.Plate,
+              daysOverdue,
+              success
+            },
+            'SYSTEM_CRON'
           );
         }
       }
@@ -273,10 +337,25 @@ const checkInspectionOverdue = async () => {
           `${records.length} aracın muayene vizesi geçmiştir.`,
           undefined
         );
-        await sendEmail(
+        const success = await sendEmail(
           admin.Email,
           'Vizesi Geçmiş Araçlar - Günlük Muayene Raporu',
           htmlTable
+        );
+        await logAudit(
+          undefined,
+          'JOB_INSPECTION_OVERDUE_EMAIL',
+          'JobEmails',
+          records[0].InspectionID,
+          {
+            jobType: 'INSPECTION_OVERDUE_ADMIN_BULK',
+            recipientType: 'ADMIN',
+            recipientEmail: admin.Email,
+            companyId: records[0].CompanyID,
+            count: records.length,
+            success
+          },
+          'SYSTEM_CRON'
         );
       }
     }
@@ -385,7 +464,22 @@ const checkInsuranceReminders = async () => {
           `${records.length} aracın sigortası bitiyor.`,
           undefined
         );
-        await sendEmail(admin.Email, subject, htmlContent);
+        const success = await sendEmail(admin.Email, subject, htmlContent);
+        await logAudit(
+          undefined,
+          'JOB_INSURANCE_REMINDER_EMAIL',
+          'JobEmails',
+          records[0].InsuranceID,
+          {
+            jobType: 'INSURANCE_REMINDER_ADMIN_BULK',
+            recipientType: 'ADMIN',
+            recipientEmail: admin.Email,
+            companyId: records[0].CompanyID,
+            count: records.length,
+            success
+          },
+          'SYSTEM_CRON'
+        );
       }
     }
 
