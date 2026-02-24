@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/layout/Layout';
-import { Car, Wrench, AlertTriangle, TrendingUp, Activity, Droplets, DollarSign } from 'lucide-react';
+import { Car, Wrench, AlertTriangle, TrendingUp, Activity, Droplets, DollarSign, Clock } from 'lucide-react';
 import { dashboardService } from '../services/dashboardService';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -10,6 +10,7 @@ import { usePermissions } from '../hooks/usePermissions';
 interface DashboardStats {
   TotalVehicles: number;
   VehiclesInMaintenance: number;
+  VehiclesInService: number;
   PendingServiceRequests: number;
   ExpiringInsurances: number;
   UpcomingMaintenance: number;
@@ -138,6 +139,20 @@ const Dashboard = () => {
               </div>
               <div className="p-3 bg-warning-50 rounded-lg">
                 <Wrench className="w-6 h-6 text-warning-600" />
+              </div>
+            </div>
+          </div>
+          )}
+
+          {hasPermission(PERMISSIONS.SERVICE_REQUESTS.VIEW) && (
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-neutral-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-neutral-600 mb-1">İşlemdeki Araçlar</p>
+                <p className="text-2xl font-bold text-neutral-900">{stats?.VehiclesInService || 0}</p>
+              </div>
+              <div className="p-3 bg-indigo-50 rounded-lg">
+                <Clock className="w-6 h-6 text-indigo-600" />
               </div>
             </div>
           </div>

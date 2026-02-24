@@ -37,6 +37,9 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
         (SELECT COUNT(*) FROM Vehicles v WHERE Status = 'Bakımda' AND ${accessCondition}) as VehiclesInMaintenance,
         (SELECT COUNT(*) FROM ServiceRequests sr 
          LEFT JOIN Vehicles v ON sr.VehicleID = v.VehicleID
+         WHERE sr.Status = 'IN_PROGRESS' AND ${accessCondition}) as VehiclesInService,
+        (SELECT COUNT(*) FROM ServiceRequests sr 
+         LEFT JOIN Vehicles v ON sr.VehicleID = v.VehicleID
          WHERE sr.Status = 'Pending' AND ${accessCondition}) as PendingServiceRequests,
         (SELECT COUNT(*) FROM InsuranceRecords ir
          LEFT JOIN Vehicles v ON ir.VehicleID = v.VehicleID
