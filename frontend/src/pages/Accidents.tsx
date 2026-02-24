@@ -53,7 +53,7 @@ const Accidents = () => {
     try {
       const [vehiclesResponse, driversResponse] = await Promise.all([
         vehicleService.getAllVehicles({ page: 1, limit: 0 }),
-        userService.getAllUsers()
+        userService.getAllUsers({ limit: 0 })
       ]);
       setVehicles(vehiclesResponse.data);
       const driversData = driversResponse as any;
@@ -391,7 +391,7 @@ const Accidents = () => {
             <SearchableSelect
               required
               value={formData.VehicleID || null}
-              onChange={(value) => setFormData({ ...formData, VehicleID: Number(value) })}
+              onChange={(value) => setFormData({ ...formData, VehicleID: Number(value), DriverID: undefined })}
               options={vehicles.map(v => ({
                 value: v.VehicleID,
                 label: `${v.Plate} - ${v.Make} ${v.Model}`
@@ -404,18 +404,15 @@ const Accidents = () => {
             <label className="block text-sm font-medium text-neutral-700 mb-1">
               Sürücü
             </label>
-            <select
-              className="w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-primary-500 focus:ring-primary-500 outline-none transition-colors"
-              value={formData.DriverID || ''}
-              onChange={(e) => setFormData({ ...formData, DriverID: Number(e.target.value) })}
-            >
-              <option value="">Sürücü Seçiniz (Opsiyonel)</option>
-              {drivers.map((driver) => (
-                <option key={driver.UserID} value={driver.UserID}>
-                  {driver.Name} {driver.Surname}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={formData.DriverID || null}
+              onChange={(value) => setFormData({ ...formData, DriverID: Number(value) })}
+              options={drivers.map((driver) => ({
+                value: driver.UserID,
+                label: `${driver.Name} ${driver.Surname}`
+              }))}
+              placeholder="Sürücü Seçiniz (Opsiyonel)"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

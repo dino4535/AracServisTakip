@@ -10,8 +10,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { page = 1, limit = 50, search } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
-    const limitNum = Math.max(1, parseInt(limit as string));
-    const offset = (pageNum - 1) * limitNum;
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * (limitNum > 0 ? limitNum : 0);
 
     const pool = await connectDB();
 
@@ -56,7 +56,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
       ${whereClause}
       GROUP BY u.UserID, u.Name, u.Surname, u.Email, u.IsActive, u.CompanyID, u.ManagerID, c.Name, m.Name, m.Surname
       ORDER BY u.UserID DESC
-      OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+      ${limitNum > 0 ? 'OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY' : ''}
     `;
 
     const request = pool.request();
@@ -68,8 +68,11 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
     if (search) {
       request.input('SearchTerm', sql.NVarChar(100), search);
     }
-    request.input('Offset', sql.Int, offset);
-    request.input('Limit', sql.Int, limitNum);
+    
+    if (limitNum > 0) {
+      request.input('Offset', sql.Int, offset);
+      request.input('Limit', sql.Int, limitNum);
+    }
 
     const result = await request.query(`${countQuery}; ${dataQuery}`);
     
@@ -81,8 +84,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
       pagination: {
         total,
         page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
+        limit: limitNum > 0 ? limitNum : total,
+        totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 1
       }
     });
   } catch (error) {
