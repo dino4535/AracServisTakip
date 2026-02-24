@@ -148,6 +148,11 @@ export const getAccidentById = async (req: AuthRequest, res: Response): Promise<
 
 export const createAccident = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // Handle empty driverId
+    if (req.body.driverId === 0 || req.body.driverId === '') {
+      req.body.driverId = null;
+    }
+
     const validation = accidentSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -179,12 +184,12 @@ export const createAccident = async (req: AuthRequest, res: Response): Promise<v
     const result = await pool
       .request()
       .input('VehicleID', sql.Int, vehicleId)
-      .input('DriverID', sql.Int, driverId || null)
-      .input('AccidentDate', sql.DateTime2, accidentDate)
+      .input('DriverID', sql.Int, driverId)
+      .input('AccidentDate', sql.DateTime2, new Date(accidentDate))
       .input('ReportNumber', sql.NVarChar(50), reportNumber || null)
       .input('Description', sql.NVarChar(sql.MAX), description || null)
-      .input('Cost', sql.Decimal(10, 2), cost || 0)
-      .input('FaultRate', sql.NVarChar(20), faultRate || null)
+      .input('Cost', sql.Decimal(10, 2), cost || null)
+      .input('FaultRate', sql.NVarChar(20), faultRate !== null && faultRate !== undefined ? String(faultRate) : null)
       .input('Status', sql.NVarChar(20), status || 'OPEN')
       .input('Location', sql.NVarChar(200), location || null)
       .query(`
@@ -193,80 +198,88 @@ export const createAccident = async (req: AuthRequest, res: Response): Promise<v
         VALUES (@VehicleID, @DriverID, @AccidentDate, @ReportNumber, @Description, @Cost, @FaultRate, @Status, @Location)
       `);
 
-    // Log Audit
-    await logAudit(
-      req.user?.UserID,
-      'CREATE_ACCIDENT',
-      'AccidentRecords',
-      result.recordset[0].AccidentID,
-      { vehicleId, driverId, status },
-      req.ip || '0.0.0.0'
-    );
+    const newAccident = result.recordset[0];
 
-    // Notify driver if assigned
-    if (driverId) {
-      await createNotification(
-        driverId,
-        'ACCIDENT_CREATED',
-        'Kaza Kaydı Oluşturuldu',
-        'Adınıza yeni bir kaza kaydı oluşturuldu.',
-        result.recordset[0].AccidentID
+    // Log Audit (safe to fail, but good to keep)
+    try {
+      await logAudit(
+        req.user?.UserID,
+        'CREATE_ACCIDENT',
+        'AccidentRecords',
+        newAccident.AccidentID,
+        { vehicleId, driverId, status },
+        req.ip || '0.0.0.0'
       );
+    } catch (auditError) {
+      console.error('Audit log error:', auditError);
+    }
+
+    // Notifications (safe to fail)
+    try {
+      // Notify driver if assigned
+      if (driverId) {
+        await createNotification(
+          driverId,
+          'ACCIDENT_CREATED',
+          'Kaza Kaydı Oluşturuldu',
+          'Adınıza yeni bir kaza kaydı oluşturuldu.',
+          newAccident.AccidentID
+        );
+        
+        // Get driver email
+        const driverResult = await pool.request()
+          .input('UserID', sql.Int, driverId)
+          .query('SELECT Email FROM Users WHERE UserID = @UserID');
+        
+        if (driverResult.recordset[0]?.Email) {
+          await sendEmail(
+            driverResult.recordset[0].Email,
+            'Yeni Kaza Kaydı',
+            'Adınıza yeni bir kaza kaydı oluşturuldu.'
+          );
+        }
+      }
+
+      // Notify Company Admins
+      const adminResult = await pool.request()
+        .input('CompanyID', sql.Int, vehicleCompanyId)
+        .query(`
+          SELECT DISTINCT u.UserID, u.Email 
+          FROM Users u
+          JOIN UserRoles ur ON u.UserID = ur.UserID
+          JOIN Roles r ON ur.RoleID = r.RoleID
+          LEFT JOIN UserCompanies uc ON u.UserID = uc.UserID
+          WHERE 
+            (u.CompanyID = @CompanyID OR uc.CompanyID = @CompanyID)
+            AND r.Name = 'ADMIN' 
+            AND u.IsActive = 1
+        `);
       
-      // Get driver email
-      const driverResult = await pool.request()
-        .input('UserID', sql.Int, driverId)
-        .query('SELECT Email FROM Users WHERE UserID = @UserID');
-      
-      if (driverResult.recordset[0]?.Email) {
-        await sendEmail(
-          driverResult.recordset[0].Email,
+      for (const admin of adminResult.recordset) {
+        await createNotification(
+          admin.UserID,
+          'NEW_ACCIDENT',
           'Yeni Kaza Kaydı',
-          'Adınıza yeni bir kaza kaydı oluşturuldu.'
+          `Araç ID: ${vehicleId} için yeni kaza kaydı oluşturuldu.`,
+          newAccident.AccidentID
         );
+        
+        if (admin.Email) {
+          await sendEmail(
+            admin.Email,
+            'Yeni Kaza Bildirimi',
+            `Araç ID: ${vehicleId} için yeni kaza kaydı sisteme girildi.`
+          );
+        }
       }
+    } catch (notificationError) {
+      console.error('Notification error:', notificationError);
     }
 
-    // Notify Company Admins
-    const adminResult = await pool.request()
-      .input('CompanyID', sql.Int, vehicleCompanyId)
-      .query(`
-        SELECT DISTINCT u.UserID, u.Email 
-        FROM Users u
-        JOIN UserRoles ur ON u.UserID = ur.UserID
-        JOIN Roles r ON ur.RoleID = r.RoleID
-        LEFT JOIN UserCompanies uc ON u.UserID = uc.UserID
-        WHERE 
-          (u.CompanyID = @CompanyID OR uc.CompanyID = @CompanyID)
-          AND r.Name = 'ADMIN' 
-          AND u.IsActive = 1
-      `);
-    
-    for (const admin of adminResult.recordset) {
-      await createNotification(
-        admin.UserID,
-        'NEW_ACCIDENT',
-        'Yeni Kaza Kaydı',
-        `Araç ID: ${vehicleId} için yeni kaza kaydı oluşturuldu.`,
-        result.recordset[0].AccidentID
-      );
-      
-      if (admin.Email) {
-        await sendEmail(
-          admin.Email,
-          'Yeni Kaza Bildirimi',
-          `Araç ID: ${vehicleId} için yeni kaza kaydı sisteme girildi.`
-        );
-      }
-    }
-
-    res.status(201).json({
-      message: 'Accident record created successfully',
-      accident: result.recordset[0],
-    });
+    res.status(201).json({ accident: newAccident });
   } catch (error) {
     console.error('Create accident error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', details: (error as Error).message });
   }
 };
 
@@ -310,12 +323,12 @@ export const updateAccident = async (req: AuthRequest, res: Response): Promise<v
       .request()
       .input('AccidentID', sql.Int, Number(id))
       .input('VehicleID', sql.Int, vehicleId)
-      .input('DriverID', sql.Int, driverId || null)
+      .input('DriverID', sql.Int, driverId)
       .input('AccidentDate', sql.DateTime2, accidentDate ? new Date(accidentDate) : null)
       .input('ReportNumber', sql.NVarChar(50), reportNumber || null)
       .input('Description', sql.NVarChar(sql.MAX), description || null)
       .input('Cost', sql.Decimal(10, 2), cost || null)
-      .input('FaultRate', sql.NVarChar(20), faultRate || null)
+      .input('FaultRate', sql.NVarChar(20), faultRate !== null && faultRate !== undefined ? String(faultRate) : null)
       .input('Status', sql.NVarChar(20), status || null)
       .input('Location', sql.NVarChar(200), location || null)
       .query(`
@@ -342,57 +355,65 @@ export const updateAccident = async (req: AuthRequest, res: Response): Promise<v
 
     const updatedAccident = result.recordset[0];
 
+    // Log Audit
+    try {
+      await logAudit(
+        req.user?.UserID,
+        'UPDATE_ACCIDENT',
+        'AccidentRecords',
+        Number(id),
+        { 
+          vehicleId: updatedAccident.VehicleID, 
+          status: updatedAccident.Status,
+          changes: validation.data 
+        },
+        req.ip || '0.0.0.0'
+      );
+    } catch (auditError) {
+      console.error('Audit log error:', auditError);
+    }
+
+    // Notify driver if status changed or just notify about update
+    try {
+      if (updatedAccident.DriverID) {
+        // Get vehicle info
+        const vehicleResult = await pool.request()
+          .input('VehicleID', sql.Int, updatedAccident.VehicleID)
+          .query('SELECT Plate, Make, Model FROM Vehicles WHERE VehicleID = @VehicleID');
+        
+        const vehicle = vehicleResult.recordset[0];
+        const vehicleInfo = vehicle ? `${vehicle.Plate}` : 'Araç';
+        const message = `${vehicleInfo} plakalı araç için kaza kaydı güncellendi. Yeni Durum: ${updatedAccident.Status}`;
+
+        await createNotification(
+          updatedAccident.DriverID,
+          'ACCIDENT_UPDATED',
+          'Kaza Kaydı Güncellendi',
+          message,
+          updatedAccident.AccidentID
+        );
+        
+        // Get driver email
+        const driverResult = await pool.request()
+          .input('UserID', sql.Int, updatedAccident.DriverID)
+          .query('SELECT Email FROM Users WHERE UserID = @UserID');
+          
+        const driverEmail = driverResult.recordset[0]?.Email;
+        if (driverEmail) {
+          await sendEmail(driverEmail, 'Kaza Kaydı Güncellendi', message);
+        }
+      }
+    } catch (notificationError) {
+      console.error('Notification error:', notificationError);
+    }
+
     res.json({
       message: 'Accident record updated successfully',
       accident: updatedAccident,
     });
-
-    // Log Audit
-    await logAudit(
-      req.user?.UserID,
-      'UPDATE_ACCIDENT',
-      'AccidentRecords',
-      Number(id),
-      { 
-        vehicleId: updatedAccident.VehicleID, 
-        status: updatedAccident.Status,
-        changes: validation.data 
-      },
-      req.ip || '0.0.0.0'
-    );
-
-    // Notify driver if status changed or just notify about update
-    if (updatedAccident.DriverID) {
-      // Get vehicle info
-      const vehicleResult = await pool.request()
-        .input('VehicleID', sql.Int, updatedAccident.VehicleID)
-        .query('SELECT Plate, Make, Model FROM Vehicles WHERE VehicleID = @VehicleID');
-      
-      const vehicle = vehicleResult.recordset[0];
-      const vehicleInfo = vehicle ? `${vehicle.Plate}` : 'Araç';
-      const message = `${vehicleInfo} plakalı araç için kaza kaydı güncellendi. Yeni Durum: ${updatedAccident.Status}`;
-
-      await createNotification(
-        updatedAccident.DriverID,
-        'ACCIDENT_UPDATED',
-        'Kaza Kaydı Güncellendi',
-        message,
-        updatedAccident.AccidentID
-      );
-      
-      // Get driver email
-      const driverResult = await pool.request()
-        .input('UserID', sql.Int, updatedAccident.DriverID)
-        .query('SELECT Email FROM Users WHERE UserID = @UserID');
-        
-      const driverEmail = driverResult.recordset[0]?.Email;
-      if (driverEmail) {
-        await sendEmail(driverEmail, 'Kaza Kaydı Güncellendi', message);
-      }
-    }
   } catch (error) {
     console.error('Update accident error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', details: (error as Error).message });
   }
 };
 

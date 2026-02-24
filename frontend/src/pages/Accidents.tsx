@@ -3,6 +3,7 @@ import Layout from '../components/layout/Layout';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { Plus, Edit, Trash2, AlertTriangle, Paperclip } from 'lucide-react';
 import { accidentService } from '../services/accidentService';
 import { vehicleService } from '../services/vehicleService';
@@ -116,10 +117,16 @@ const Accidents = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!formData.VehicleID) {
+      alert('Lütfen bir araç seçiniz.');
+      return;
+    }
+
     try {
       const payload = {
         vehicleId: formData.VehicleID,
-        driverId: formData.DriverID,
+        driverId: formData.DriverID || null,
         accidentDate: formData.AccidentDate,
         reportNumber: formData.ReportNumber,
         description: formData.Description,
@@ -381,19 +388,16 @@ const Accidents = () => {
             <label className="block text-sm font-medium text-neutral-700 mb-1">
               Araç
             </label>
-            <select
+            <SearchableSelect
               required
-              className="w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-primary-500 focus:ring-primary-500 outline-none transition-colors"
-              value={formData.VehicleID || ''}
-              onChange={(e) => setFormData({ ...formData, VehicleID: Number(e.target.value) })}
-            >
-              <option value="">Araç Seçiniz</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.VehicleID} value={vehicle.VehicleID}>
-                  {vehicle.Plate} - {vehicle.Make} {vehicle.Model}
-                </option>
-              ))}
-            </select>
+              value={formData.VehicleID || null}
+              onChange={(value) => setFormData({ ...formData, VehicleID: Number(value) })}
+              options={vehicles.map(v => ({
+                value: v.VehicleID,
+                label: `${v.Plate} - ${v.Make} ${v.Model}`
+              }))}
+              placeholder="Araç Seçiniz (Plaka ile arama yapabilirsiniz)"
+            />
           </div>
 
           <div>

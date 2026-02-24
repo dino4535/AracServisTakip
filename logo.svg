@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="480" height="120"
+     viewBox="0 0 480 120">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="100%" stop-color="#020b1f" />
+    </linearGradient>
+
+    <linearGradient id="iconGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22d3ee" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+
+    <!-- Metni saran kuyruk için parlak stroke -->
+    <linearGradient id="tailGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#22d3ee" stop-opacity="0.1" />
+      <stop offset="40%" stop-color="#22d3ee" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Arka plan kapsül -->
+  <rect x="10" y="10" width="460" height="100" rx="24" ry="24"
+        fill="url(#bgGrad)" stroke="#020617" stroke-width="1" />
+
+  <!-- METİN BLOĞU -->
+  <g id="textBlock" transform="translate(150 45)">
+    <text x="0" y="0"
+          fill="#e5e7eb"
+          font-family="Arial, Helvetica, sans-serif"
+          font-size="13"
+          font-weight="700"
+          letter-spacing="0.10em">
+      Powered By Oğuz EMÜL
+    </text>
+
+    <!-- Yuvarlak içinde R -->
+    <circle cx="190" cy="-8" r="7"
+            fill="none" stroke="#e5e7eb" stroke-width="1" />
+    <text x="187" y="-5"
+          fill="#e5e7eb"
+          font-family="Arial, Helvetica, sans-serif"
+          font-size="8"
+          font-weight="700">
+      R
+    </text>
+
+    <text x="0" y="20"
+          fill="#9ca3af"
+          font-family="Arial, Helvetica, sans-serif"
+          font-size="11">
+      Geleceğin Teknolojisi ile Tasarlandı
+    </text>
+  </g>
+
+  <!-- METNİ SARAN KUYRUK YOLU (PARLAYAN STROKE) -->
+  <!-- Yaklaşık olarak textBlock etrafında geniş bir kapsül -->
+  <path id="tailPath"
+        d="
+          M135 40
+          H355
+          A20 20 0 0 1 375 60
+          V80
+          A20 20 0 0 1 355 100
+          H135
+          A20 20 0 0 1 115 80
+          V60
+          A20 20 0 0 1 135 40
+        "
+        fill="none"
+        stroke="rgba(15,23,42,0.7)"
+        stroke-width="6" />
+
+  <!-- Kuyruğun parlak kısmı (metnin etrafında dönen ışık) -->
+  <path id="tailHighlight"
+        d="
+          M135 40
+          H355
+          A20 20 0 0 1 375 60
+          V80
+          A20 20 0 0 1 355 100
+          H135
+          A20 20 0 0 1 115 80
+          V60
+          A20 20 0 0 1 135 40
+        "
+        fill="none"
+        stroke="url(#tailGrad)"
+        stroke-width="4"
+        stroke-linecap="round"
+        stroke-dasharray="120 320">
+    <animate attributeName="stroke-dashoffset"
+             from="0" to="-440"
+             dur="3.5s"
+             repeatCount="indefinite" />
+  </path>
+
+  <!-- OK VE IŞIK DEMETİ (SOLDA BAŞLAYIP UZUN YOL GİDER) -->
+  <!-- Okun konumunu taşıyan grup -->
+  <g id="arrowTranslate" transform="translate(40 45)">
+    <g id="arrow">
+      <!-- Okun ışık demeti: metni saran kuyruğa doğru uzuyor gibi -->
+      <path d="M10 15 L-30 7 L-30 23 Z"
+            fill="#22d3ee"
+            opacity="0.35" />
+
+      <!-- Dış halka -->
+      <circle cx="20" cy="15" r="18"
+              fill="#020617"
+              stroke="url(#iconGrad)"
+              stroke-width="2" />
+
+      <!-- İç parlama -->
+      <circle cx="20" cy="15" r="10"
+              fill="url(#iconGrad)"
+              opacity="0.18" />
+
+      <!-- Ok (her zaman sağa bakıyor) -->
+      <path d="M14 15 L24 9 L24 13 L30 13 L30 17 L24 17 L24 21 Z"
+            fill="url(#iconGrad)" />
+
+      <!-- Alt devre çizgileri -->
+      <line x1="10" y1="23" x2="30" y2="23"
+            stroke="#38bdf8"
+            stroke-width="1.2"
+            stroke-linecap="round"
+            opacity="0.7" />
+      <circle cx="14" cy="23" r="1.5" fill="#38bdf8" />
+      <circle cx="22" cy="23" r="1.5" fill="#38bdf8" />
+    </g>
+  </g>
+
+  <!-- Okun soldan sağa uzun yol alması (geri gelirken ani sıfırlama, her zaman sağa bakıyor) -->
+  <animateTransform
+    xlink:href="#arrowTranslate"
+    attributeName="transform"
+    type="translate"
+    values="40 45; 380 45; 40 45; 40 45"
+    keyTimes="0;0.8;0.8001;1"
+    dur="3.5s"
+    repeatCount="indefinite" />
+</svg>
