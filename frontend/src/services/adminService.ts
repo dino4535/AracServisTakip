@@ -132,4 +132,8 @@ export const adminService = {
   updateSetting: async (key: string, value: string): Promise<void> => {
     await api.put(`/settings/${key}`, { value });
   },
+
+  triggerJobReminder: async (): Promise<void> => {
+    await api.post('/settings/trigger-reminders');
+  },
 };

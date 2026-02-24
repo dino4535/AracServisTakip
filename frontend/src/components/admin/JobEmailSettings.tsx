@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { adminService } from '../../services/adminService';
 import Button from '../common/Button';
-import { Save, AlertCircle, CheckCircle } from 'lucide-react';
+import { Save, AlertCircle, CheckCircle, Play, Clock } from 'lucide-react';
 
 type Message = { type: 'success' | 'error'; text: string } | null;
 
 const JobEmailSettings = () => {
   const [loading, setLoading] = useState(false);
+  const [triggerLoading, setTriggerLoading] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
   const [inspectionReminderEmails, setInspectionReminderEmails] = useState(true);
   const [inspectionOverdueEmails, setInspectionOverdueEmails] = useState(true);
   const [insuranceReminderEmails, setInsuranceReminderEmails] = useState(true);
+  const [scheduleTime, setScheduleTime] = useState('09:00');
 
   useEffect(() => {
     fetchSettings();
@@ -25,15 +27,18 @@ const JobEmailSettings = () => {
         inspectionReminder,
         inspectionOverdue,
         insuranceReminder,
+        schedule,
       ] = await Promise.all([
         safeGetSetting('job_inspection_reminder_emails'),
         safeGetSetting('job_inspection_overdue_emails'),
         safeGetSetting('job_insurance_reminder_emails'),
+        safeGetSetting('job_reminder_schedule'),
       ]);
 
       setInspectionReminderEmails(inspectionReminder !== 'false');
       setInspectionOverdueEmails(inspectionOverdue !== 'false');
       setInsuranceReminderEmails(insuranceReminder !== 'false');
+      setScheduleTime(schedule && schedule !== 'true' ? schedule : '09:00');
     } catch (error) {
       console.error('Error fetching job email settings:', error);
       setMessage({
@@ -72,6 +77,10 @@ const JobEmailSettings = () => {
           'job_insurance_reminder_emails',
           String(insuranceReminderEmails)
         ),
+        adminService.updateSetting(
+          'job_reminder_schedule',
+          scheduleTime
+        ),
       ]);
 
       setMessage({
@@ -91,9 +100,44 @@ const JobEmailSettings = () => {
     }
   };
 
+  const handleTriggerManual = async () => {
+    if (!window.confirm('Job e-posta hatırlatmalarını şimdi manuel olarak tetiklemek istediğinize emin misiniz?')) {
+      return;
+    }
+    
+    try {
+      setTriggerLoading(true);
+      await adminService.triggerJobReminder();
+      setMessage({
+        type: 'success',
+        text: 'Job başarıyla tetiklendi. İşlem arka planda devam ediyor.',
+      });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('Trigger error:', error);
+      setMessage({
+        type: 'error',
+        text: 'Job tetiklenirken bir hata oluştu.',
+      });
+    } finally {
+      setTriggerLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold mb-6">Job E-posta Ayarları</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold">Job E-posta Ayarları</h2>
+        <Button 
+          variant="secondary" 
+          onClick={handleTriggerManual} 
+          disabled={triggerLoading || loading}
+          className="text-primary-600 border-primary-600 hover:bg-primary-50"
+        >
+          <Play size={16} className="mr-2" />
+          {triggerLoading ? 'Çalışıyor...' : 'Şimdi Tetikle'}
+        </Button>
+      </div>
 
       {message && (
         <div
@@ -113,6 +157,24 @@ const JobEmailSettings = () => {
       )}
 
       <div className="space-y-6">
+        <div className="border-b pb-4">
+          <h3 className="text-lg font-medium mb-3 flex items-center">
+            <Clock size={20} className="mr-2 text-neutral-500" />
+            Otomatik Çalışma Zamanı
+          </h3>
+          <p className="text-sm text-neutral-600 mb-3">
+            Sistemin otomatik olarak hatırlatma maillerini göndereceği saati belirleyin.
+          </p>
+          <div className="flex items-center">
+            <input
+              type="time"
+              value={scheduleTime}
+              onChange={(e) => setScheduleTime(e.target.value)}
+              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+        </div>
+
         <div className="border-b pb-4">
           <h3 className="text-lg font-medium mb-3">Muayene Hatırlatma Mailleri</h3>
           <p className="text-sm text-neutral-600 mb-3">

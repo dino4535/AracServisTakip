@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
+import { runRemindersManually, restartReminderCron } from '../scheduledJobs/reminderCron';
 
 export const getSetting = async (req: Request, res: Response) => {
   try {
@@ -33,10 +34,18 @@ export const updateSetting = async (req: Request, res: Response) => {
       .input('Key', sql.NVarChar(50), key)
       .input('Value', sql.NVarChar(sql.MAX), String(value))
       .query(`
-        UPDATE SystemSettings 
-        SET SettingValue = @Value, UpdatedAt = GETDATE() 
-        WHERE SettingKey = @Key
+        IF EXISTS (SELECT 1 FROM SystemSettings WHERE SettingKey = @Key)
+          UPDATE SystemSettings 
+          SET SettingValue = @Value, UpdatedAt = GETDATE() 
+          WHERE SettingKey = @Key
+        ELSE
+          INSERT INTO SystemSettings (SettingKey, SettingValue, UpdatedAt)
+          VALUES (@Key, @Value, GETDATE())
       `);
+
+    if (key === 'job_reminder_schedule') {
+      restartReminderCron().catch(err => console.error('Restart cron failed:', err));
+    }
 
     res.json({ message: 'Setting updated successfully', key, value });
   } catch (error) {
@@ -52,6 +61,16 @@ export const getAllSettings = async (req: Request, res: Response) => {
     res.json(result.recordset);
   } catch (error) {
     console.error('Get all settings error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const triggerReminders = async (req: Request, res: Response) => {
+  try {
+    runRemindersManually().catch(err => console.error('Manual trigger failed:', err));
+    res.json({ message: 'Job tetiklendi, arka planda çalışıyor.' });
+  } catch (error) {
+    console.error('Trigger error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };

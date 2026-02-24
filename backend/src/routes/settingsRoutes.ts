@@ -3,7 +3,7 @@ import express from 'express';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
 import { PERMISSIONS } from '../utils/constants';
-import { getSetting, updateSetting, getAllSettings } from '../controllers/settingsController';
+import { getSetting, updateSetting, getAllSettings, triggerReminders } from '../controllers/settingsController';
 
 const router = express.Router();
 
@@ -27,6 +27,20 @@ const router = express.Router();
  *         description: List of all settings
  */
 router.get('/', authenticate, authorize(PERMISSIONS.ADMIN.SETTINGS), getAllSettings);
+
+/**
+ * @swagger
+ * /settings/trigger-reminders:
+ *   post:
+ *     summary: Manually trigger reminder job
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Job triggered successfully
+ */
+router.post('/trigger-reminders', authenticate, authorize(PERMISSIONS.ADMIN.SETTINGS), triggerReminders);
 
 /**
  * @swagger

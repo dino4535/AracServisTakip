@@ -489,12 +489,61 @@ const checkInsuranceReminders = async () => {
   }
 };
 
-export const startReminderCron = () => {
-  // Run every day at 09:00 AM
-  cron.schedule('0 9 * * *', async () => {
-    console.log('⏰ Running daily reminder cron job...');
-    await checkInspectionReminders();
-    await checkInspectionOverdue();
-    await checkInsuranceReminders();
-  });
+export const runRemindersManually = async () => {
+  console.log('🚀 Manually triggering reminder cron job...');
+  await checkInspectionReminders();
+  await checkInspectionOverdue();
+  await checkInsuranceReminders();
+  console.log('✅ Manual reminder job completed.');
+};
+
+let reminderTask: cron.ScheduledTask | null = null;
+
+export const startReminderCron = async () => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request()
+      .input('Key', sql.NVarChar(50), 'job_reminder_schedule')
+      .query('SELECT SettingValue FROM SystemSettings WHERE SettingKey = @Key');
+    
+    // Default to 09:00 if not set
+    // Format in DB: "HH:mm" (e.g. "09:00")
+    // Cron expects: "minute hour * * *"
+    let schedule = '0 9 * * *'; 
+    let timeStr = '09:00';
+
+    if (result.recordset.length > 0 && result.recordset[0].SettingValue) {
+      timeStr = result.recordset[0].SettingValue;
+      const [hour, minute] = timeStr.split(':');
+      if (hour && minute) {
+        schedule = `${parseInt(minute)} ${parseInt(hour)} * * *`;
+      }
+    }
+
+    console.log(`⏰ Starting daily reminder cron job at ${timeStr} (${schedule})...`);
+    
+    if (reminderTask) {
+      reminderTask.stop();
+    }
+
+    reminderTask = cron.schedule(schedule, async () => {
+      console.log('⏰ Running daily reminder cron job...');
+      await checkInspectionReminders();
+      await checkInspectionOverdue();
+      await checkInsuranceReminders();
+    });
+  } catch (error) {
+    console.error('Failed to start reminder cron:', error);
+    // Fallback to default
+    reminderTask = cron.schedule('0 9 * * *', async () => {
+        await checkInspectionReminders();
+        await checkInspectionOverdue();
+        await checkInsuranceReminders();
+    });
+  }
+};
+
+export const restartReminderCron = async () => {
+  console.log('🔄 Restarting reminder cron job...');
+  await startReminderCron();
 };
