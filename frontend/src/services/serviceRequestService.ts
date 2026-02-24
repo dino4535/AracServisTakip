@@ -1,21 +1,30 @@
 import api from './api';
 import { ServiceRequest, PaginatedResponse, PaginationParams } from '../types';
 
+export interface ServiceRequestStats {
+  total: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+}
+
 export const serviceRequestService = {
   getAllServiceRequests: async (
     params?: { vehicleId?: number; status?: string; sortField?: string; sortDirection?: 'asc' | 'desc'; search?: string } & PaginationParams
-  ): Promise<PaginatedResponse<ServiceRequest>> => {
-    const response = await api.get<{ data: ServiceRequest[]; pagination: any }>('/service-requests', { params });
+  ): Promise<PaginatedResponse<ServiceRequest> & { stats?: ServiceRequestStats }> => {
+    const response = await api.get<{ data: ServiceRequest[]; pagination: any; stats?: ServiceRequestStats }>('/service-requests', { params });
     if (response.data.pagination) {
       return {
         data: response.data.data,
-        pagination: response.data.pagination
+        pagination: response.data.pagination,
+        stats: response.data.stats
       };
     }
     const data = response.data.data || (response.data as any) || [];
     return {
       data,
-      pagination: { total: data.length, page: 1, limit: data.length, totalPages: 1 }
+      pagination: { total: data.length, page: 1, limit: data.length, totalPages: 1 },
+      stats: response.data.stats
     };
   },
 

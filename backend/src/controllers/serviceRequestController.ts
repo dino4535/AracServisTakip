@@ -21,7 +21,7 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
     const companyId = req.user?.CompanyID;
     const userRole = req.user?.Role;
 
-    let whereClause = 'WHERE 1=1';
+    let accessClause = 'WHERE 1=1';
 
     const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
 
@@ -38,11 +38,13 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
 
     if (!isSuperAdmin) {
       if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+        accessClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        whereClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
     }
+
+    let whereClause = accessClause;
 
     if (vehicleId) {
       whereClause += ` AND sr.VehicleID = @VehicleID`;
@@ -74,6 +76,16 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
       SELECT COUNT(*) as total
       ${baseFromClause}
       ${whereClause}
+    `;
+
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as Total,
+        SUM(CASE WHEN sr.Status = 'PENDING' THEN 1 ELSE 0 END) as Pending,
+        SUM(CASE WHEN sr.Status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as InProgress,
+        SUM(CASE WHEN sr.Status = 'COMPLETED' THEN 1 ELSE 0 END) as Completed
+      ${baseFromClause}
+      ${accessClause}
     `;
 
     let orderBy = 'sr.RequestDate DESC';
@@ -128,13 +140,15 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
       request.input('SearchTerm', sql.NVarChar(100), search);
     }
 
-    const [countResult, dataResult] = await Promise.all([
+    const [countResult, dataResult, statsResult] = await Promise.all([
       request.query(countQuery),
-      request.query(dataQuery)
+      request.query(dataQuery),
+      request.query(statsQuery)
     ]);
 
     const total = countResult.recordset[0].total;
     const totalPages = Math.ceil(total / limitNum);
+    const stats = statsResult.recordset[0];
 
     res.json({
       data: dataResult.recordset,
@@ -143,6 +157,12 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
         page: pageNum,
         limit: limitNum,
         totalPages
+      },
+      stats: {
+        total: stats.Total,
+        pending: stats.Pending || 0,
+        inProgress: stats.InProgress || 0,
+        completed: stats.Completed || 0
       }
     });
   } catch (error) {
@@ -455,7 +475,7 @@ export const updateServiceRequest = async (req: AuthRequest, res: Response): Pro
       return;
     }
 
-    const { description, priority, assignedTo, estimatedCost, serviceCompany, serviceCompanyId, driverName, deliveredBy, extraWork, serviceType } = validation.data;
+    const { description, priority, assignedTo, estimatedCost, actualCost, serviceCompany, serviceCompanyId, driverName, deliveredBy, extraWork, serviceType } = validation.data;
 
     const pool = await connectDB();
 
@@ -490,6 +510,7 @@ export const updateServiceRequest = async (req: AuthRequest, res: Response): Pro
       .input('Priority', sql.NVarChar(20), priority)
       .input('AssignedTo', sql.Int, assignedTo || null)
       .input('EstimatedCost', sql.Decimal(10, 2), estimatedCost || null)
+      .input('ActualCost', sql.Decimal(10, 2), actualCost || null)
       .input('ServiceCompany', sql.NVarChar(255), serviceCompany || null)
       .input('ServiceCompanyID', sql.Int, serviceCompanyId || null)
       .input('DriverName', sql.NVarChar(100), driverName || null)
@@ -502,6 +523,7 @@ export const updateServiceRequest = async (req: AuthRequest, res: Response): Pro
             Priority = COALESCE(@Priority, Priority),
             AssignedTo = COALESCE(@AssignedTo, AssignedTo),
             EstimatedCost = COALESCE(@EstimatedCost, EstimatedCost),
+            ActualCost = COALESCE(@ActualCost, ActualCost),
             ServiceCompany = COALESCE(@ServiceCompany, ServiceCompany),
             ServiceCompanyID = COALESCE(@ServiceCompanyID, ServiceCompanyID),
             DriverName = COALESCE(@DriverName, DriverName),
@@ -522,7 +544,7 @@ export const updateServiceRequest = async (req: AuthRequest, res: Response): Pro
       'UPDATE_SERVICE_REQUEST',
       'ServiceRequests',
       result.recordset[0].RequestID,
-      { description, priority, assignedTo, estimatedCost, serviceCompany, driverName, deliveredBy, extraWork, serviceType },
+      { description, priority, assignedTo, estimatedCost, actualCost, serviceCompany, driverName, deliveredBy, extraWork, serviceType },
       req.ip || '0.0.0.0'
     );
 

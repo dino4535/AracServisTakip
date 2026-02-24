@@ -252,25 +252,25 @@ const ServiceRequests = () => {
           <div className={`bg-white rounded-xl shadow-sm p-6 border border-neutral-200 ${filterStatus === 'PENDING' ? 'ring-2 ring-warning-500' : ''}`}>
             <h3 className="text-sm font-medium text-neutral-600 mb-1">Bekleyen</h3>
             <p className="text-2xl font-bold text-warning-600">
-              {serviceRequests.filter(r => r.Status === 'PENDING').length}
+              {serviceRequestsData?.stats?.pending || 0}
             </p>
           </div>
           <div className={`bg-white rounded-xl shadow-sm p-6 border border-neutral-200 ${filterStatus === 'IN_PROGRESS' ? 'ring-2 ring-primary-500' : ''}`}>
             <h3 className="text-sm font-medium text-neutral-600 mb-1">İşlemde</h3>
             <p className="text-2xl font-bold text-primary-600">
-              {serviceRequests.filter(r => r.Status === 'IN_PROGRESS').length}
+              {serviceRequestsData?.stats?.inProgress || 0}
             </p>
           </div>
           <div className={`bg-white rounded-xl shadow-sm p-6 border border-neutral-200 ${filterStatus === 'COMPLETED' ? 'ring-2 ring-success-500' : ''}`}>
             <h3 className="text-sm font-medium text-neutral-600 mb-1">Tamamlandı</h3>
             <p className="text-2xl font-bold text-success-600">
-              {serviceRequests.filter(r => r.Status === 'COMPLETED').length}
+              {serviceRequestsData?.stats?.completed || 0}
             </p>
           </div>
           <div className="bg-white rounded-xl shadow-sm p-6 border border-neutral-200">
             <h3 className="text-sm font-medium text-neutral-600 mb-1">Toplam Talep</h3>
             <p className="text-2xl font-bold text-neutral-900">
-              {serviceRequests.length}
+              {serviceRequestsData?.stats?.total || 0}
             </p>
           </div>
         </div>
@@ -648,16 +648,30 @@ const ServiceRequests = () => {
             </div>
 
             {selectedRequest && (
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Tahmini Maliyet (₺)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.EstimatedCost || ''}
-                  onChange={(e) => setFormData({ ...formData, EstimatedCost: parseFloat(e.target.value) })}
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">Tahmini Maliyet (₺)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.EstimatedCost || ''}
+                    onChange={(e) => setFormData({ ...formData, EstimatedCost: parseFloat(e.target.value) })}
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                {(formData.Status === 'COMPLETED' || selectedRequest.Status === 'COMPLETED') && (
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Gerçek Maliyet (₺)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.ActualCost || ''}
+                      onChange={(e) => setFormData({ ...formData, ActualCost: parseFloat(e.target.value) })}
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
 
