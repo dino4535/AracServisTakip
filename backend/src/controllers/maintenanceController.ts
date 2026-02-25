@@ -336,6 +336,7 @@ export const deleteMaintenanceRecord = async (req: AuthRequest, res: Response): 
 export const getMaintenancePredictions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const pool = await connectDB();
+    const { search } = req.query;
     const companyId = req.user?.CompanyID;
 
     let query = `
@@ -386,9 +387,17 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
       query += ` AND v.CompanyID = @CompanyID`;
     }
 
+    if (search) {
+      query += ` AND (v.Plate LIKE '%' + @SearchTerm + '%' OR v.Make LIKE '%' + @SearchTerm + '%' OR v.Model LIKE '%' + @SearchTerm + '%')`;
+    }
+
     const request = pool.request();
     if (companyId) {
       request.input('CompanyID', sql.Int, companyId);
+    }
+
+    if (search) {
+      request.input('SearchTerm', sql.NVarChar, search);
     }
 
     const result = await request.query(query);

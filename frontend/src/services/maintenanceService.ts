@@ -38,8 +38,8 @@ export const maintenanceService = {
     await api.delete(`/maintenance/${id}`);
   },
 
-  getMaintenancePredictions: async (): Promise<any[]> => {
-    const response = await api.get<any[]>('/maintenance/predictions');
+  getMaintenancePredictions: async (search?: string): Promise<any[]> => {
+    const response = await api.get<any[]>('/maintenance/predictions', { params: { search } });
     return response.data;
   },
 };

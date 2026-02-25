@@ -78,8 +78,8 @@ const Maintenance = () => {
   const vehicles: Vehicle[] = vehiclesData?.data || [];
 
   const { data: predictions = [], isLoading: isLoadingPredictions } = useQuery<any[]>({
-    queryKey: ['maintenancePredictions'],
-    queryFn: () => maintenanceService.getMaintenancePredictions(),
+    queryKey: ['maintenancePredictions', searchTerm],
+    queryFn: () => maintenanceService.getMaintenancePredictions(searchTerm || undefined),
   });
 
   // Mutations
