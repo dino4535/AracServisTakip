@@ -12,4 +12,5 @@ export const maintenanceSchema = z.object({
   nextServiceDate: z.string().optional().nullable().refine((val) => !val || !isNaN(Date.parse(val)), {
     message: "Invalid date format",
   }),
+  nextServiceKm: z.number().int().min(0).optional().nullable(),
 });

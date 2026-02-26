@@ -54,6 +54,10 @@ export const vehicleService = {
     await api.post(`/vehicles/${id}/km`, { kilometer });
   },
 
+  updateNextMaintenanceKm: async (id: number, nextMaintenanceKm: number): Promise<void> => {
+    await api.post(`/vehicles/${id}/next-maintenance`, { nextMaintenanceKm });
+  },
+
   bulkUpdateManagers: async (vehicleIds: number[], managerId: number | null): Promise<void> => {
     await api.post('/vehicles/bulk-managers', { vehicleIds, managerId });
   },

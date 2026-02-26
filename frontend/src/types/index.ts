@@ -68,6 +68,8 @@ export interface MaintenanceRecord {
   Cost?: number;
   ServiceDate: string;
   NextServiceDate?: string;
+  NextServiceKm?: number | null;
+  nextServiceKm?: number | null;
   CreatedBy: number;
   CreatedByName?: string;
   Plate?: string;

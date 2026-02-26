@@ -25,6 +25,7 @@ const maintenanceSchema = z.object({
   cost: z.number().min(0).optional(),
   serviceDate: z.string().min(1, 'Bakım tarihi zorunludur'),
   nextServiceDate: z.string().optional().nullable(),
+  nextServiceKm: z.number().min(0).optional().nullable(),
 });
 
 type MaintenanceFormData = z.infer<typeof maintenanceSchema>;
@@ -33,6 +34,9 @@ const Maintenance = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'records' | 'predictions'>('records');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+  const [selectedVehicleForTarget, setSelectedVehicleForTarget] = useState<any | null>(null);
+  const [newTargetKm, setNewTargetKm] = useState<number>(0);
   const [selectedRecord, setSelectedRecord] = useState<MaintenanceRecord | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
@@ -52,6 +56,7 @@ const Maintenance = () => {
       cost: 0,
       serviceDate: new Date().toISOString().split('T')[0],
       nextServiceDate: '',
+      nextServiceKm: 0,
     }
   });
 
@@ -100,6 +105,15 @@ const Maintenance = () => {
     },
   });
 
+  const updateVehicleMutation = useMutation({
+    mutationFn: ({ id, nextMaintenanceKm }: { id: number; nextMaintenanceKm: number }) => 
+      vehicleService.updateNextMaintenanceKm(id, nextMaintenanceKm),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenancePredictions'] });
+      setIsTargetModalOpen(false);
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: maintenanceService.deleteMaintenanceRecord,
     onSuccess: () => {
@@ -108,28 +122,30 @@ const Maintenance = () => {
     },
   });
 
+  const onSubmit: SubmitHandler<MaintenanceFormData> = (data) => {
+    if (selectedRecord) {
+      updateMutation.mutate({ id: selectedRecord.MaintenanceID, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
   const handleOpenModal = (record?: MaintenanceRecord) => {
     if (record) {
       setSelectedRecord(record);
-      // Populate form with record data
       setValue('vehicleId', record.VehicleID);
       setValue('type', record.Type);
       setValue('description', record.Description || '');
       setValue('kilometer', record.Kilometer || 0);
       setValue('cost', record.Cost || 0);
-      setValue('serviceDate', record.ServiceDate ? record.ServiceDate.split('T')[0] : '');
+      setValue('serviceDate', record.ServiceDate.split('T')[0]);
       setValue('nextServiceDate', record.NextServiceDate ? record.NextServiceDate.split('T')[0] : '');
+      setValue('nextServiceKm', record.NextServiceKm ?? 0);
     } else {
       setSelectedRecord(null);
-      reset({
-        vehicleId: 0,
-        type: '',
-        description: '',
-        kilometer: 0,
-        cost: 0,
-        serviceDate: new Date().toISOString().split('T')[0],
-        nextServiceDate: '',
-      });
+      reset();
+      setValue('serviceDate', new Date().toISOString().split('T')[0]);
+      setValue('nextServiceKm', 0);
     }
     setIsModalOpen(true);
   };
@@ -140,25 +156,6 @@ const Maintenance = () => {
     reset();
   };
 
-  const onSubmit: SubmitHandler<MaintenanceFormData> = (data) => {
-    // Transform frontend data to match backend expectation (PascalCase)
-    const payload: Partial<MaintenanceRecord> = {
-      VehicleID: data.vehicleId,
-      Type: data.type,
-      Description: data.description,
-      Kilometer: data.kilometer,
-      Cost: data.cost,
-      ServiceDate: data.serviceDate,
-      NextServiceDate: data.nextServiceDate || undefined,
-    };
-
-    if (selectedRecord) {
-      updateMutation.mutate({ id: selectedRecord.MaintenanceID, data: payload });
-    } else {
-      createMutation.mutate(payload);
-    }
-  };
-
   const handleDelete = (id: number) => {
     setDeleteId(id);
   };
@@ -166,6 +163,22 @@ const Maintenance = () => {
   const confirmDelete = () => {
     if (deleteId) {
       deleteMutation.mutate(deleteId);
+    }
+  };
+
+  const handleOpenTargetModal = (prediction: any) => {
+    setSelectedVehicleForTarget(prediction);
+    setNewTargetKm(prediction.NextServiceKm || 0);
+    setIsTargetModalOpen(true);
+  };
+
+  const handleUpdateTarget = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedVehicleForTarget && newTargetKm >= 0) {
+      updateVehicleMutation.mutate({
+        id: selectedVehicleForTarget.VehicleID,
+        nextMaintenanceKm: newTargetKm
+      });
     }
   };
 
@@ -473,7 +486,19 @@ const Maintenance = () => {
                               </div>
                             ) : '-'}
                           </td>
-                          <td className="px-6 py-4 text-sm text-neutral-600">{p.NextServiceKm?.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">
+                            <div className="flex items-center gap-2">
+                              <span>{p.NextServiceKm?.toLocaleString()}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTargetModal(p)}
+                                className="p-1 text-neutral-400 hover:text-primary-600 rounded-full hover:bg-neutral-100 transition-colors"
+                                title="Hedefi Düzenle"
+                              >
+                                <Edit className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
                           <td className="px-6 py-4 text-sm text-neutral-600">{p.RemainingKm?.toLocaleString()}</td>
                           <td className="px-6 py-4 text-sm text-neutral-600">
                             {p.EstServiceDate ? (
@@ -524,8 +549,16 @@ const Maintenance = () => {
                           </div>
                         </div>
                         <div className="text-right text-xs text-neutral-500 space-y-2">
-                          <div>
-                            Hedef KM: {p.NextServiceKm?.toLocaleString() ?? '-'}
+                          <div className="flex items-center justify-end gap-2">
+                            <span>Hedef KM: {p.NextServiceKm?.toLocaleString() ?? '-'}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTargetModal(p)}
+                              className="p-1 text-neutral-400 hover:text-primary-600 rounded-full hover:bg-neutral-100 transition-colors"
+                              title="Hedefi Düzenle"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </button>
                           </div>
                           <div>
                             Kalan KM: {p.RemainingKm?.toLocaleString() ?? '-'}
@@ -647,6 +680,16 @@ const Maintenance = () => {
                 className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
+
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-neutral-700 mb-1">Sonraki Bakım Hedefi (KM)</label>
+              <input
+                type="number"
+                {...register('nextServiceKm', { valueAsNumber: true })}
+                className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Boş bırakılırsa otomatik hesaplanır"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">
@@ -655,6 +698,31 @@ const Maintenance = () => {
             </Button>
             <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
               {createMutation.isPending || updateMutation.isPending ? 'Kaydediliyor...' : (selectedRecord ? 'Güncelle' : 'Kaydet')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={isTargetModalOpen} onClose={() => setIsTargetModalOpen(false)} title="Sonraki Bakım Hedefini Düzenle" size="sm">
+        <form onSubmit={handleUpdateTarget} className="space-y-4">
+          <div>
+            <div className="mb-2 text-sm text-neutral-600">
+              <span className="font-medium">{selectedVehicleForTarget?.Plate}</span> plakalı araç için yeni bakım hedefi:
+            </div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">Yeni Hedef KM</label>
+            <input
+              type="number"
+              value={newTargetKm}
+              onChange={(e) => setNewTargetKm(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div className="flex justify-end space-x-3 pt-4">
+            <Button type="button" variant="secondary" onClick={() => setIsTargetModalOpen(false)}>
+              İptal
+            </Button>
+            <Button type="submit" disabled={updateVehicleMutation.isPending}>
+              {updateVehicleMutation.isPending ? 'Kaydediliyor...' : 'Güncelle'}
             </Button>
           </div>
         </form>

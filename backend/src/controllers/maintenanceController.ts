@@ -157,13 +157,15 @@ export const getMaintenanceById = async (req: AuthRequest, res: Response): Promi
 
 export const createMaintenanceRecord = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { vehicleId, type, description, kilometer, cost, serviceDate, nextServiceDate } = req.body;
+    const validation = maintenanceSchema.safeParse(req.body);
 
-    if (!vehicleId || !type || !serviceDate) {
-      res.status(400).json({ error: 'VehicleId, type, and serviceDate are required' });
+    if (!validation.success) {
+      res.status(400).json({ error: 'Validation error', details: validation.error.format() });
       return;
     }
 
+    const { vehicleId, type, description, kilometer, cost, serviceDate, nextServiceDate, nextServiceKm } = validation.data;
+  
     const pool = await connectDB();
 
     // Verify vehicle access
@@ -180,6 +182,14 @@ export const createMaintenanceRecord = async (req: AuthRequest, res: Response): 
     if (vehicleCheck.recordset.length === 0) {
       res.status(403).json({ error: 'You do not have permission for this vehicle' });
       return;
+    }
+
+    // Update vehicle's NextMaintenanceKm if provided
+    if (nextServiceKm) {
+      await pool.request()
+        .input('VehicleID', sql.Int, vehicleId)
+        .input('NextServiceKm', sql.Int, nextServiceKm)
+        .query('UPDATE Vehicles SET NextMaintenanceKm = @NextServiceKm WHERE VehicleID = @VehicleID');
     }
 
     const result = await pool
@@ -219,7 +229,7 @@ export const updateMaintenanceRecord = async (req: AuthRequest, res: Response): 
       return;
     }
 
-    const { vehicleId, type, description, kilometer, cost, serviceDate, nextServiceDate } = validation.data;
+    const { vehicleId, type, description, kilometer, cost, serviceDate, nextServiceDate, nextServiceKm } = validation.data;
 
     const pool = await connectDB();
 
@@ -242,6 +252,14 @@ export const updateMaintenanceRecord = async (req: AuthRequest, res: Response): 
     if (checkQuery.recordset.length === 0) {
       res.status(403).json({ error: 'You do not have permission for this maintenance record' });
       return;
+    }
+
+    // Update vehicle's NextMaintenanceKm if provided
+    if (nextServiceKm) {
+      await pool.request()
+        .input('VehicleID', sql.Int, vehicleId)
+        .input('NextServiceKm', sql.Int, nextServiceKm)
+        .query('UPDATE Vehicles SET NextMaintenanceKm = @NextServiceKm WHERE VehicleID = @VehicleID');
     }
 
     const result = await pool

@@ -6,6 +6,7 @@ import {
   updateVehicle, 
   deleteVehicle,
   updateKm,
+  updateNextMaintenanceKm,
   bulkUpdateVehicleManagers,
   calculateRisks,
   getVehicleFullOverviewByPlate
@@ -131,6 +132,7 @@ router.post('/bulk-managers', authenticate, authorize(PERMISSIONS.VEHICLES.EDIT)
 router.put('/:id', authenticate, authorize(PERMISSIONS.VEHICLES.EDIT), updateVehicle);
 router.delete('/:id', authenticate, authorize(PERMISSIONS.VEHICLES.DELETE), deleteVehicle);
 router.post('/:id/km', authenticate, updateKm);
+router.post('/:id/next-maintenance', authenticate, authorize(PERMISSIONS.VEHICLES.EDIT), updateNextMaintenanceKm);
 
 router.post('/calculate-risks', authenticate, authorize(PERMISSIONS.VEHICLES.EDIT), calculateRisks);
 

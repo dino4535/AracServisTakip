@@ -16,6 +16,60 @@ export const calculateRisks = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
+export const updateNextMaintenanceKm = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { nextMaintenanceKm } = req.body;
+
+    if (isNaN(Number(id))) {
+      res.status(400).json({ error: 'Invalid vehicle ID' });
+      return;
+    }
+
+    if (nextMaintenanceKm === undefined || nextMaintenanceKm === null || isNaN(Number(nextMaintenanceKm)) || Number(nextMaintenanceKm) < 0) {
+       res.status(400).json({ error: 'Valid Next Maintenance KM is required' });
+       return;
+    }
+
+    const pool = await connectDB();
+    
+    const result = await pool.request()
+      .input('VehicleID', sql.Int, Number(id))
+      .input('NextMaintenanceKm', sql.Int, Number(nextMaintenanceKm))
+      .input('UserID', sql.Int, req.user?.UserID)
+      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('Role', sql.NVarChar(50), req.user?.Role)
+      .query(`
+        UPDATE Vehicles
+        SET NextMaintenanceKm = @NextMaintenanceKm
+        WHERE VehicleID = @VehicleID
+        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+          OR CompanyID = @CompanyID 
+          OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ error: 'Vehicle not found or access denied' });
+      return;
+    }
+
+    // Log Audit
+    await logAudit(
+      req.user?.UserID,
+      'UPDATE_VEHICLE_TARGET',
+      'Vehicles',
+      Number(id),
+      { nextMaintenanceKm },
+      req.ip || '0.0.0.0'
+    );
+
+    res.json({ message: 'Next maintenance target updated successfully' });
+  } catch (error) {
+    console.error('Update next maintenance km error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { companyId, status, page = 1, limit = 50, search } = req.query;
