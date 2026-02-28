@@ -64,5 +64,16 @@ export const monthlyKmService = {
   getVehicleHistory: async (vehicleId: number): Promise<MonthlyKmHistoryRecord[]> => {
     const response = await api.get<MonthlyKmHistoryRecord[]>(`/monthly-km/${vehicleId}/history`);
     return response.data;
+  },
+
+  importRecords: async (file: File): Promise<{ message: string; importedCount: number; errors?: string[] }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<{ message: string; importedCount: number; errors?: string[] }>('/monthly-km/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
   }
 };
