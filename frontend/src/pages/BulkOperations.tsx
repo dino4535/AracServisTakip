@@ -4,7 +4,7 @@ import Button from '../components/common/Button';
 import { Upload, Download, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { bulkService } from '../services/bulkService';
 
-type TabType = 'vehicles' | 'insurance' | 'fuel' | 'driver_mapping' | 'drivers';
+type TabType = 'vehicles' | 'insurance' | 'fuel' | 'driver_mapping' | 'drivers' | 'monthly_km';
 
 const BulkOperations = () => {
   const [activeTab, setActiveTab] = useState<TabType>('vehicles');
@@ -75,6 +75,9 @@ const BulkOperations = () => {
         case 'drivers':
           response = await bulkService.uploadDrivers(file);
           break;
+        case 'monthly_km':
+          response = await bulkService.uploadMonthlyKm(file);
+          break;
       }
       setResult(response);
       if (response.success && (!response.errors || response.errors.length === 0)) {
@@ -94,6 +97,7 @@ const BulkOperations = () => {
     { id: 'driver_mapping', label: 'Sürücü Eşleme' },
     { id: 'insurance', label: 'Toplu Sigorta/Kasko' },
     { id: 'fuel', label: 'Toplu Yakıt Kaydı' },
+    { id: 'monthly_km', label: 'Aylık KM Yükleme' },
   ];
 
   return (

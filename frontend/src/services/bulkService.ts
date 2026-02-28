@@ -1,14 +1,14 @@
 import api from './api';
 
 export const bulkService = {
-  downloadTemplate: async (type: 'vehicles' | 'insurance' | 'fuel' | 'driver_mapping' | 'drivers') => {
+  downloadTemplate: async (type: 'vehicles' | 'insurance' | 'fuel' | 'driver_mapping' | 'drivers' | 'monthly_km') => {
     const response = await api.get(`/bulk/template/${type}`, {
       responseType: 'blob',
     });
     return response.data;
   },
 
-  downloadData: async (type: 'vehicles' | 'insurance' | 'fuel' | 'driver_mapping' | 'drivers') => {
+  downloadData: async (type: 'vehicles' | 'insurance' | 'fuel' | 'driver_mapping' | 'drivers' | 'monthly_km') => {
     const response = await api.get(`/bulk/data/${type}`, {
       responseType: 'blob',
     });
@@ -63,6 +63,17 @@ export const bulkService = {
     const formData = new FormData();
     formData.append('file', file);
     const response = await api.post('/bulk/drivers', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  uploadMonthlyKm: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/bulk/monthly-km', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
