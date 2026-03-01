@@ -107,44 +107,118 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
       .input('Year', sql.Int, targetYear)
       .input('PrevMonth', sql.Int, prevMonth)
       .input('PrevYear', sql.Int, prevYear)
-      .input('Offset', sql.Int, offset)
-      .input('Limit', sql.Int, limitNum);
+      .input('Limit', sql.Int, limitNum)
+      .input('Offset', sql.Int, offset);
+
+    if (search) {
+      request.input('SearchTerm', sql.NVarChar, search);
+    }
 
     if (!isSuperAdmin) {
-      if (userCompanyId) {
-        request.input('UserCompanyID', sql.Int, userCompanyId);
-      }
-      if (userId) {
-        request.input('UserID', sql.Int, userId);
-      }
+      if (userCompanyId) request.input('UserCompanyID', sql.Int, userCompanyId);
+      if (userId) request.input('UserID', sql.Int, userId);
     } else if (companyId) {
       request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
     }
 
-    if (search) {
-      request.input('SearchTerm', sql.NVarChar(100), search);
-    }
-
-    const [countResult, dataResult] = await Promise.all([
-      request.query(countQuery),
-      request.query(dataQuery)
-    ]);
-
-    const total = countResult.recordset[0].total;
-    const totalPages = Math.ceil(total / limitNum);
+    const result = await request.query(dataQuery);
+    const countResult = await request.query(countQuery);
 
     res.json({
-      data: dataResult.recordset,
+      data: result.recordset,
       pagination: {
-        total,
+        total: countResult.recordset[0].total,
         page: pageNum,
         limit: limitNum,
-        totalPages
+        totalPages: Math.ceil(countResult.recordset[0].total / limitNum)
       }
     });
 
   } catch (error) {
-    console.error('Get monthly KM error:', error);
+    console.error('Get monthly km error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { month, year, companyId } = req.query;
+    
+    if (!month || !year) {
+      res.status(400).json({ error: 'Month and Year are required' });
+      return;
+    }
+
+    const pool = await connectDB();
+    const targetMonth = parseInt(month as string);
+    const targetYear = parseInt(year as string);
+    
+    let whereClause = "WHERE v.Status = 'Active'";
+    
+    const userRole = req.user?.Role;
+    const userId = req.user?.UserID;
+    const userCompanyId = userRole === 'SuperAdmin' ? null : req.user?.CompanyID;
+
+    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+
+    let userDepotIds: number[] = [];
+    if (!isSuperAdmin && userId) {
+      const depotResult = await pool.request()
+        .input('UserID', sql.Int, userId)
+        .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
+
+      userDepotIds = depotResult.recordset
+        .map((row: any) => row.DepotID)
+        .filter((id: any) => id !== null && id !== undefined);
+    }
+
+    if (!isSuperAdmin) {
+      if (userDepotIds.length > 0) {
+        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+      } else if (userCompanyId) {
+        whereClause += ` AND v.CompanyID = @UserCompanyID`;
+      } else {
+        whereClause += ` AND (v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+      }
+    } else if (companyId) {
+      whereClause += ` AND v.CompanyID = @FilterCompanyID`;
+    }
+
+    // Exclude vehicles that have KM entry for this month/year
+    whereClause += ` AND NOT EXISTS (
+      SELECT 1 FROM MonthlyKmLog mk 
+      WHERE mk.VehicleID = v.VehicleID 
+      AND mk.Month = @Month 
+      AND mk.Year = @Year
+    )`;
+
+    const query = `
+      SELECT 
+        v.VehicleID,
+        v.Plate,
+        v.CurrentKm,
+        c.Name as CompanyName,
+        d.Name as DepotName
+      FROM Vehicles v
+      LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
+      LEFT JOIN Depots d ON v.DepotID = d.DepotID
+      ${whereClause}
+      ORDER BY v.Plate ASC
+    `;
+
+    const request = pool.request()
+      .input('Month', sql.Int, targetMonth)
+      .input('Year', sql.Int, targetYear);
+      
+    if (userCompanyId) request.input('UserCompanyID', sql.Int, userCompanyId);
+    if (companyId) request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
+    if (userId) request.input('UserID', sql.Int, userId);
+
+    const result = await request.query(query);
+
+    res.json(result.recordset);
+  } catch (error) {
+    console.error('Get missing monthly km error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -13,6 +13,14 @@ export interface MonthlyKmRecord {
   UpdatedAt: string | null;
 }
 
+export interface MissingKmRecord {
+  VehicleID: number;
+  Plate: string;
+  CurrentKm: number;
+  CompanyName: string | null;
+  DepotName: string | null;
+}
+
 export interface SaveMonthlyKmPayload {
   month: number;
   year: number;
@@ -73,6 +81,17 @@ export const monthlyKmService = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+    });
+    return response.data;
+  },
+
+  getMissingRecords: async (
+    month: number,
+    year: number,
+    companyId?: number
+  ): Promise<MissingKmRecord[]> => {
+    const response = await api.get<MissingKmRecord[]>('/monthly-km/missing', {
+      params: { month, year, companyId }
     });
     return response.data;
   }

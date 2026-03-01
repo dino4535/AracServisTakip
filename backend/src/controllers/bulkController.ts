@@ -191,10 +191,14 @@ export const exportData = async (req: AuthRequest, res: Response) => {
           .query(`
             SELECT 
               v.Plate,
+              c.Name as 'Company',
+              d.Name as 'Depot',
               FORMAT(DATEFROMPARTS(mk.Year, mk.Month, 1), 'yyyy-MM-dd') as 'Date (YYYY-MM-DD)',
               mk.Kilometer
             FROM MonthlyKmLog mk
             JOIN Vehicles v ON mk.VehicleID = v.VehicleID
+            LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
+            LEFT JOIN Depots d ON v.DepotID = d.DepotID
             WHERE (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
           `);
         data = monthlyKm.recordset;
