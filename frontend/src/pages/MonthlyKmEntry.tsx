@@ -1,17 +1,16 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { monthlyKmService, MonthlyKmRecord } from '../services/monthlyKmService';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/layout/Layout';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
-import { Save, Calendar, RefreshCw, History, Upload } from 'lucide-react';
+import { Save, Calendar, RefreshCw, History } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const MonthlyKmEntry = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -64,37 +63,6 @@ const MonthlyKmEntry = () => {
       toast.error('Kayıt sırasında bir hata oluştu');
     }
   });
-
-  const importMutation = useMutation({
-    mutationFn: async (file: File) => {
-      return await monthlyKmService.importRecords(file);
-    },
-    onSuccess: (data) => {
-      toast.success(`Import tamamlandı. ${data.importedCount} kayıt güncellendi.`);
-      if (data.errors && data.errors.length > 0) {
-        toast.error(`${data.errors.length} hata oluştu. Detaylar konsolda.`);
-        console.error('Import errors:', data.errors);
-      }
-      queryClient.invalidateQueries({ queryKey: ['monthlyKm'] });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    },
-    onError: (error) => {
-      console.error('Import error:', error);
-      toast.error('Import sırasında hata oluştu.');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  });
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      importMutation.mutate(file);
-    }
-  };
 
   const handleKmChange = (vehicleId: number, value: string) => {
     const numValue = parseInt(value);
