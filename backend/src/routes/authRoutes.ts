@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { register, login, getProfile, getPermissions, forgotPassword, resetPassword } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
+import { loginLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -78,7 +79,7 @@ router.post('/register', register);
  *       401:
  *         description: Geçersiz kimlik bilgileri
  */
-router.post('/login', login);
+router.post('/login', loginLimiter, login);
 
 /**
  * @swagger
