@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { downloadTemplate, exportData, uploadVehicles, uploadInsurance, uploadFuel, uploadDriverMapping, uploadDrivers } from '../controllers/bulkController';
+import { downloadTemplate, exportData, uploadVehicles, uploadInsurance, uploadFuel, uploadDriverMapping, uploadDrivers, uploadMonthlyKm } from '../controllers/bulkController';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -13,5 +13,6 @@ router.post('/insurance', authenticate, upload.single('file'), uploadInsurance);
 router.post('/fuel', authenticate, upload.single('file'), uploadFuel);
 router.post('/driver-mapping', authenticate, upload.single('file'), uploadDriverMapping);
 router.post('/drivers', authenticate, upload.single('file'), uploadDrivers);
+router.post('/monthly-km', authenticate, upload.single('file'), uploadMonthlyKm);
 
 export default router;
