@@ -183,21 +183,6 @@ const MonthlyKmEntry = () => {
               className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2 text-sm"
             />
           </div>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept=".xlsx, .xls"
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importMutation.isPending}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            {importMutation.isPending ? 'Yükleniyor...' : 'Excel Yükle'}
-          </button>
           <button
             onClick={handleSave}
             disabled={Object.keys(editedValues).length === 0 || saveMutation.isPending}
