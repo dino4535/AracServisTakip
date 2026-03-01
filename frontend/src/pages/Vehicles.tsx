@@ -429,7 +429,7 @@ const Vehicles = () => {
                       <PermissionGuard permission={PERMISSIONS.VEHICLES.EDIT}>
                         <button
                           onClick={() => handleOpenModal(vehicle)}
-                          className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"
                           title="Düzenle"
                         >
                           <Edit className="w-4 h-4 text-primary-600" />
@@ -438,10 +438,10 @@ const Vehicles = () => {
                       <PermissionGuard permission={PERMISSIONS.VEHICLES.DELETE}>
                         <button
                           onClick={() => handleDelete(vehicle.VehicleID)}
-                          className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"
                           title="Sil"
                         >
-                          <Trash2 className="w-4 h-4 text-danger-600" />
+                          <Trash2 className="w-4 h-4 text-red-600" />
                         </button>
                       </PermissionGuard>
                     </div>
@@ -450,113 +450,66 @@ const Vehicles = () => {
               ))}
             </tbody>
           </table>
-
+          
+          {/* Mobile View */}
           <div className="md:hidden divide-y divide-neutral-100">
             {vehicles.map((vehicle: Vehicle) => (
-              <div
-                key={vehicle.VehicleID}
-                className="p-4 flex flex-col gap-3"
-              >
-                <div className="flex items-start justify-between gap-3">
+              <div key={vehicle.VehicleID} className="p-4 space-y-3">
+                <div className="flex justify-between items-start">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-neutral-900">
-                        {vehicle.Plate}
-                      </span>
-                    </div>
-                    <div className="text-xs text-neutral-500 mt-0.5">
-                      {vehicle.Make} {vehicle.Model} {vehicle.Year}
-                    </div>
-                    <div className="text-xs text-neutral-500 mt-0.5">
-                      {vehicle.CompanyName || '-'} {vehicle.DepotName ? `• ${vehicle.DepotName}` : ''}
-                    </div>
-                    {vehicle.ManagerName && (
-                      <div className="text-xs text-neutral-500 mt-0.5">
-                        Yönetici: {vehicle.ManagerName}
-                      </div>
-                    )}
+                    <div className="font-medium text-neutral-900">{vehicle.Plate}</div>
+                    <div className="text-sm text-neutral-500">{vehicle.Make} {vehicle.Model}</div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className="text-xs text-neutral-500">
-                      KM: {formatKm(vehicle.CurrentKm)}
-                    </span>
-                    <span
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium ${
-                        vehicle.Status === 'Active'
-                          ? 'bg-success-100 text-success-700'
-                          : vehicle.Status === 'InMaintenance'
-                          ? 'bg-warning-100 text-warning-700'
-                          : 'bg-neutral-100 text-neutral-700'
-                      }`}
-                    >
-                      {vehicle.Status}
-                    </span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    vehicle.Status === 'Active' ? 'bg-success-100 text-success-700' :
+                    vehicle.Status === 'InMaintenance' ? 'bg-warning-100 text-warning-700' :
+                    'bg-neutral-100 text-neutral-700'
+                  }`}>
+                    {vehicle.Status}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-sm text-neutral-600">
+                  <div>
+                    <span className="text-neutral-400">Şirket:</span> {vehicle.CompanyName || '-'}
+                  </div>
+                  <div>
+                    <span className="text-neutral-400">Depo:</span> {vehicle.DepotName || '-'}
+                  </div>
+                  <div>
+                    <span className="text-neutral-400">KM:</span> {formatKm(vehicle.CurrentKm)}
+                  </div>
+                  <div>
+                    <span className="text-neutral-400">Yönetici:</span> {vehicle.ManagerName || '-'}
                   </div>
                 </div>
 
-                {vehicle.RiskScore !== undefined && (
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-neutral-500">Risk Skoru</span>
-                    <span
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium ${
-                        vehicle.RiskCategory === 'Red'
-                          ? 'bg-red-100 text-red-700'
-                          : vehicle.RiskCategory === 'Yellow'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-green-100 text-green-700'
-                      }`}
-                    >
-                      {vehicle.RiskScore}{' '}
-                      {vehicle.RiskCategory === 'Red'
-                        ? '(Yüksek)'
-                        : vehicle.RiskCategory === 'Yellow'
-                        ? '(Orta)'
-                        : '(Düşük)'}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-2 border-t border-neutral-100 mt-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedVehicleIds.includes(vehicle.VehicleID)}
-                      onChange={() => toggleSelectVehicle(vehicle.VehicleID)}
-                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
-                    {selectedVehicleIds.includes(vehicle.VehicleID) && (
-                      <span className="text-xs text-primary-600 font-medium">
-                        Seçili
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-2">
+                <div className="flex justify-end items-center space-x-2 pt-2">
+                  <button
+                    onClick={() => handleOpenKmModal(vehicle)}
+                    className="p-2 bg-neutral-50 rounded-lg text-neutral-600"
+                    title="KM Güncelle"
+                  >
+                    <FuelIcon className="w-4 h-4" />
+                  </button>
+                  <PermissionGuard permission={PERMISSIONS.VEHICLES.EDIT}>
                     <button
-                      onClick={() => handleOpenKmModal(vehicle)}
-                      className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"
-                      title="KM Güncelle"
+                      onClick={() => handleOpenModal(vehicle)}
+                      className="p-2 bg-primary-50 rounded-lg text-primary-600"
+                      title="Düzenle"
                     >
-                      <FuelIcon className="w-4 h-4 text-neutral-600" />
+                      <Edit className="w-4 h-4" />
                     </button>
-                    <PermissionGuard permission={PERMISSIONS.VEHICLES.EDIT}>
-                      <button
-                        onClick={() => handleOpenModal(vehicle)}
-                        className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
-                        title="Düzenle"
-                      >
-                        <Edit className="w-4 h-4 text-primary-600" />
-                      </button>
-                    </PermissionGuard>
-                    <PermissionGuard permission={PERMISSIONS.VEHICLES.DELETE}>
-                      <button
-                        onClick={() => handleDelete(vehicle.VehicleID)}
-                        className="p-1.5 hover:bg-danger-50 rounded-lg transition-colors"
-                        title="Sil"
-                      >
-                        <Trash2 className="w-4 h-4 text-danger-600" />
-                      </button>
-                    </PermissionGuard>
-                  </div>
+                  </PermissionGuard>
+                  <PermissionGuard permission={PERMISSIONS.VEHICLES.DELETE}>
+                    <button
+                      onClick={() => handleDelete(vehicle.VehicleID)}
+                      className="p-2 bg-red-50 rounded-lg text-red-600"
+                      title="Sil"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </PermissionGuard>
                 </div>
               </div>
             ))}

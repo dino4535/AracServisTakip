@@ -21,8 +21,13 @@ import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './utils/ProtectedRoute';
  
 
+import { useSocketNotifications } from './hooks/useSocketNotifications';
+
 function App() {
   const { fetchProfile, isAuthenticated } = useAuthStore();
+  
+  // Initialize socket notifications
+  useSocketNotifications();
 
   useEffect(() => {
     if (isAuthenticated) {
