@@ -344,6 +344,7 @@ const Vehicles = () => {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Depo</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Yönetici</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">KM</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Son Servis KM</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Risk</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Durum</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">İşlemler</th>
@@ -368,6 +369,9 @@ const Vehicles = () => {
                   <td className="px-6 py-4 text-sm text-neutral-600">{vehicle.DepotName || '-'}</td>
                   <td className="px-6 py-4 text-sm text-neutral-600">{vehicle.ManagerName || '-'}</td>
                   <td className="px-6 py-4 text-sm text-neutral-600">{formatKm(vehicle.CurrentKm)}</td>
+                  <td className="px-6 py-4 text-sm text-neutral-600">
+                    {vehicle.LastServiceKm ? formatKm(vehicle.LastServiceKm) : '-'}
+                  </td>
                   <td className="px-6 py-4 overflow-visible">
                     {vehicle.RiskScore !== undefined ? (
                       <div className="relative group flex justify-start">

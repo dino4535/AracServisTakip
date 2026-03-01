@@ -139,7 +139,13 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
         c.Name as CompanyName,
         d.Name as DepotName,
         CONCAT(u.Name, ' ', u.Surname) as DriverName,
-        CONCAT(m.Name, ' ', m.Surname) as ManagerName
+        CONCAT(m.Name, ' ', m.Surname) as ManagerName,
+        (
+          SELECT TOP 1 mr.Kilometer
+           FROM MaintenanceRecords mr
+           WHERE mr.VehicleID = v.VehicleID AND mr.Kilometer IS NOT NULL
+           ORDER BY mr.ServiceDate DESC
+        ) as LastServiceKm
       ${baseFromClause}
       ${whereClause}
       ORDER BY v.VehicleID DESC
@@ -260,7 +266,13 @@ export const getVehicleFullOverviewByPlate = async (req: AuthRequest, res: Respo
         c.Name as CompanyName,
         d.Name as DepotName,
         CONCAT(dr.Name, ' ', dr.Surname) as DriverName,
-        CONCAT(mgr.Name, ' ', mgr.Surname) as ManagerName
+        CONCAT(mgr.Name, ' ', mgr.Surname) as ManagerName,
+        (
+          SELECT TOP 1 mr.Kilometer
+             FROM MaintenanceRecords mr
+             WHERE mr.VehicleID = v.VehicleID AND mr.Kilometer IS NOT NULL
+             ORDER BY mr.ServiceDate DESC
+        ) as LastServiceKm
       FROM Vehicles v
       LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
       LEFT JOIN Depots d ON v.DepotID = d.DepotID
@@ -353,7 +365,13 @@ export const getVehicleById = async (req: AuthRequest, res: Response): Promise<v
           c.Name as CompanyName,
           d.Name as DepotName,
           CONCAT(u.Name, ' ', u.Surname) as DriverName,
-          CONCAT(m.Name, ' ', m.Surname) as ManagerName
+          CONCAT(m.Name, ' ', m.Surname) as ManagerName,
+          (
+            SELECT TOP 1 mr.Kilometer
+           FROM MaintenanceRecords mr
+           WHERE mr.VehicleID = v.VehicleID AND mr.Kilometer IS NOT NULL
+           ORDER BY mr.ServiceDate DESC
+          ) as LastServiceKm
         FROM Vehicles v
         LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
         LEFT JOIN Depots d ON v.DepotID = d.DepotID

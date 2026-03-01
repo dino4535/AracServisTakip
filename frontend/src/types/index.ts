@@ -41,6 +41,7 @@ export interface Vehicle {
   Segment?: string | null;
   CurrentKm: number;
   NextMaintenanceKm?: number | null;
+  LastServiceKm?: number | null;
   Status?: string;
   AssignedDriverID?: number | null;
   DriverName?: string | null;

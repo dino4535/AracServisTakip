@@ -5,7 +5,7 @@ import { vehicleService } from '../services/vehicleService';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAuthStore } from '../store/authStore';
 import { Car, Wrench, Shield, ClipboardCheck, Fuel, AlertTriangle, ClipboardList, Gauge, Search } from 'lucide-react';
-import { formatCurrency, formatDate } from '../utils/formatUtils';
+import { formatCurrency, formatDate, formatKm } from '../utils/formatUtils';
 
 type OverviewMaintenance = any;
 type OverviewInsurance = any;
@@ -23,6 +23,7 @@ interface OverviewVehicle {
   Year?: number;
   FuelType?: string;
   CurrentKm?: number;
+  LastServiceKm?: number;
   Status?: string;
   CompanyName?: string;
   DepotName?: string;
@@ -172,7 +173,11 @@ const VehicleOverview = () => {
                   </div>
                   <div>
                     <div className="text-neutral-500">Güncel KM</div>
-                    <div className="font-medium text-neutral-900">{vehicle.CurrentKm ?? '-'}</div>
+                    <div className="font-medium text-neutral-900">{vehicle.CurrentKm ? formatKm(vehicle.CurrentKm) : '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-neutral-500">Son Servis KM</div>
+                    <div className="font-medium text-neutral-900">{vehicle.LastServiceKm ? formatKm(vehicle.LastServiceKm) : '-'}</div>
                   </div>
                   <div>
                     <div className="text-neutral-500">Sürücü / Yönetici</div>
