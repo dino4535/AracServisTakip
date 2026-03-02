@@ -358,18 +358,23 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
     const companyId = req.user?.CompanyID;
 
     let query = `
-      WITH KmStats AS (
+      WITH AllKm AS (
+          SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords
+          UNION ALL
+          SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates
+          UNION ALL
+          SELECT VehicleID, ServiceDate as Date, Kilometer as Km FROM MaintenanceRecords
+          UNION ALL
+          SELECT VehicleID, DATEFROMPARTS(Year, Month, 1) as Date, Kilometer as Km FROM MonthlyKmLog
+      ),
+      KmStats AS (
           SELECT 
               VehicleID,
               MIN(Date) as FirstDate,
               MAX(Date) as LastDate,
               MIN(Km) as FirstKm,
               MAX(Km) as LastKm
-          FROM (
-              SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords
-              UNION ALL
-              SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates
-          ) AllKm
+          FROM AllKm
           GROUP BY VehicleID
       ),
       LastMaintenance AS (
