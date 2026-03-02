@@ -194,6 +194,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
               c.Name as 'Company',
               d.Name as 'Depot',
               FORMAT(DATEFROMPARTS(mk.Year, mk.Month, 1), 'yyyy-MM-dd') as 'Date (YYYY-MM-DD)',
+              CONCAT(mk.Month, '/', mk.Year) as 'Period (MM/YYYY)',
               mk.Kilometer
             FROM MonthlyKmLog mk
             JOIN Vehicles v ON mk.VehicleID = v.VehicleID
