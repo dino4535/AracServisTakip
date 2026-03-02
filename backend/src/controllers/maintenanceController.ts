@@ -359,21 +359,27 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
 
     let query = `
       WITH AllKm AS (
-          SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords
+          SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords WHERE Kilometer > 0
           UNION ALL
-          SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates
+          SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates WHERE Kilometer > 0
           UNION ALL
-          SELECT VehicleID, ServiceDate as Date, Kilometer as Km FROM MaintenanceRecords
+          SELECT VehicleID, ServiceDate as Date, Kilometer as Km FROM MaintenanceRecords WHERE Kilometer > 0
           UNION ALL
-          SELECT VehicleID, DATEFROMPARTS(Year, Month, 1) as Date, Kilometer as Km FROM MonthlyKmLog
+          SELECT VehicleID, DATEFROMPARTS(Year, Month, 1) as Date, Kilometer as Km FROM MonthlyKmLog WHERE Kilometer > 0
       ),
       KmStats AS (
           SELECT 
               VehicleID,
+              -- Overall Stats
               MIN(Date) as FirstDate,
               MAX(Date) as LastDate,
               MIN(Km) as FirstKm,
-              MAX(Km) as LastKm
+              MAX(Km) as LastKm,
+              -- Recent Stats (Last 90 Days)
+              MIN(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Date END) as RecentFirstDate,
+              MAX(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Date END) as RecentLastDate,
+              MIN(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Km END) as RecentFirstKm,
+              MAX(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Km END) as RecentLastKm
           FROM AllKm
           GROUP BY VehicleID
       ),
@@ -396,8 +402,14 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
           ks.LastDate,
           ks.FirstKm,
           ks.LastKm,
+          ks.RecentFirstDate,
+          ks.RecentLastDate,
+          ks.RecentFirstKm,
+          ks.RecentLastKm,
           DATEDIFF(day, ks.FirstDate, ks.LastDate) as DaysTracked,
           (ks.LastKm - ks.FirstKm) as KmDiff,
+          DATEDIFF(day, ks.RecentFirstDate, ks.RecentLastDate) as RecentDaysTracked,
+          (ks.RecentLastKm - ks.RecentFirstKm) as RecentKmDiff,
           lm.LastServiceDate,
           lm.LastServiceKm
       FROM Vehicles v
@@ -427,8 +439,24 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
 
     const predictions = result.recordset.map(record => {
       let avgDailyKm = 0;
+      
+      // Calculate Overall Average
+      let overallAvg = 0;
       if (record.DaysTracked > 0 && record.KmDiff > 0) {
-        avgDailyKm = record.KmDiff / record.DaysTracked;
+        overallAvg = record.KmDiff / record.DaysTracked;
+      }
+
+      // Calculate Recent Average (Last 90 Days)
+      let recentAvg = 0;
+      if (record.RecentDaysTracked > 7 && record.RecentKmDiff > 0) { // Require at least 7 days of recent data
+        recentAvg = record.RecentKmDiff / record.RecentDaysTracked;
+      }
+
+      // Decision Logic: Prefer Recent Average if valid, otherwise fallback to Overall Average
+      if (recentAvg > 0) {
+        avgDailyKm = recentAvg;
+      } else {
+        avgDailyKm = overallAvg;
       }
 
       // Default maintenance interval: 15,000 KM
