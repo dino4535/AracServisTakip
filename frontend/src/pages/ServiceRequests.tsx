@@ -40,6 +40,7 @@ const ServiceRequests = () => {
   const [actualCost, setActualCost] = useState<string>('');
   const [serviceActions, setServiceActions] = useState<string>('');
   const [vehiclePlateInput, setVehiclePlateInput] = useState<string>('');
+  const [formCurrentKm, setFormCurrentKm] = useState<string>('');
 
   // Queries
   const { data: serviceRequestsData, isLoading } = useQuery({
@@ -157,10 +158,12 @@ const ServiceRequests = () => {
       setFormData(request);
       const vehicle = Array.isArray(vehicles) ? vehicles.find(v => v.VehicleID === request.VehicleID) : undefined;
       setVehiclePlateInput(vehicle?.Plate || '');
+      setFormCurrentKm(String(vehicle?.CurrentKm || ''));
     } else {
       setSelectedRequest(null);
       setFormData({ Priority: 'MEDIUM' });
       setVehiclePlateInput('');
+      setFormCurrentKm('');
     }
     setIsModalOpen(true);
   };
@@ -180,10 +183,19 @@ const ServiceRequests = () => {
       alert('Lütfen geçerli bir araç plakası seçin.');
       return;
     }
+    if (!formCurrentKm || Number.isNaN(parseInt(formCurrentKm, 10)) || parseInt(formCurrentKm, 10) < 0) {
+      alert('Lütfen aracın mevcut KM bilgisini girin.');
+      return;
+    }
     if (selectedRequest) {
       updateMutation.mutate({ id: selectedRequest.RequestID, data: formData });
     } else {
-      createMutation.mutate(formData);
+      const kmTag = `[Mevcut KM: ${parseInt(formCurrentKm, 10)}]`;
+      const payload = {
+        ...formData,
+        Description: formData.Description ? `${kmTag} ${formData.Description}` : kmTag,
+      };
+      createMutation.mutate(payload);
     }
   };
 
@@ -531,6 +543,7 @@ const ServiceRequests = () => {
                     VehicleID: vehicle?.VehicleID,
                     DriverName: vehicle?.DriverName || formData.DriverName || ''
                   });
+                  setFormCurrentKm(vehicle?.CurrentKm ? String(vehicle.CurrentKm) : '');
                 }}
                 className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white text-neutral-900"
                 placeholder="Plaka yazın ve listeden seçin"
@@ -543,6 +556,19 @@ const ServiceRequests = () => {
                   </option>
                 ))}
               </datalist>
+            </div>
+
+            <div className="col-span-1">
+              <label className="block text-sm font-medium text-neutral-700 mb-1">Mevcut KM *</label>
+              <input
+                type="number"
+                value={formCurrentKm}
+                onChange={(e) => setFormCurrentKm(e.target.value)}
+                className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white text-neutral-900"
+                placeholder="Örn: 105000"
+                min={0}
+                required
+              />
             </div>
 
             <div className="col-span-1">
