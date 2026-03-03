@@ -59,13 +59,19 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
     }
 
     if (!isSuperAdmin) {
+      const accessConditions: string[] = [];
+
       if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else if (userCompanyId) {
-        whereClause += ` AND v.CompanyID = @UserCompanyID`;
-      } else {
-        whereClause += ` AND (v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessConditions.push(`v.DepotID IN (${userDepotIds.join(',')})`);
       }
+
+      if (userCompanyId) {
+        accessConditions.push(`v.CompanyID = @UserCompanyID`);
+      }
+
+      accessConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+
+      whereClause += ` AND (${accessConditions.join(' OR ')})`;
     } else if (companyId) {
       whereClause += ` AND v.CompanyID = @FilterCompanyID`;
     }
@@ -173,13 +179,19 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
     }
 
     if (!isSuperAdmin) {
+      const accessConditions: string[] = [];
+
       if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else if (userCompanyId) {
-        whereClause += ` AND v.CompanyID = @UserCompanyID`;
-      } else {
-        whereClause += ` AND (v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessConditions.push(`v.DepotID IN (${userDepotIds.join(',')})`);
       }
+
+      if (userCompanyId) {
+        accessConditions.push(`v.CompanyID = @UserCompanyID`);
+      }
+
+      accessConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+
+      whereClause += ` AND (${accessConditions.join(' OR ')})`;
     } else if (companyId) {
       whereClause += ` AND v.CompanyID = @FilterCompanyID`;
     }
@@ -265,12 +277,13 @@ export const saveMonthlyKm = async (req: AuthRequest, res: Response): Promise<vo
 
       if (userDepotIds.length > 0) {
         accessQueryParts.push(`v.DepotID IN (${userDepotIds.join(',')})`);
-      } else if (companyId) {
-        accessQueryParts.push(`v.CompanyID = @CompanyID`);
-        accessQueryParts.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-      } else {
-        accessQueryParts.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
       }
+      
+      if (companyId) {
+        accessQueryParts.push(`v.CompanyID = @CompanyID`);
+      }
+      
+      accessQueryParts.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
 
       const accessWhere = accessQueryParts.length > 0 ? accessQueryParts.join(' OR ') : '1=1';
 
