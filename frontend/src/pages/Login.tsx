@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import Button from '../components/common/Button';
@@ -10,8 +10,19 @@ const Login = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('rememberedEmail');
+    const savedPassword = localStorage.getItem('rememberedPassword');
+    if (savedEmail && savedPassword) {
+      setEmail(savedEmail);
+      setPassword(savedPassword);
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,6 +31,15 @@ const Login = () => {
 
     try {
       await login(email, password);
+      
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email);
+        localStorage.setItem('rememberedPassword', password);
+      } else {
+        localStorage.removeItem('rememberedEmail');
+        localStorage.removeItem('rememberedPassword');
+      }
+
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Giriş başarısız. Lütfen bilgilerinizi kontrol edin.');
@@ -80,6 +100,18 @@ const Login = () => {
             )}
 
             <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-white focus:ring-white border-white/30 rounded bg-white/20 checked:bg-white checked:text-primary-900 cursor-pointer"
+                />
+                <label htmlFor="remember-me" className="ml-2 block text-sm text-white drop-shadow-sm cursor-pointer select-none">
+                  Beni Hatırla
+                </label>
+              </div>
               <button
                 type="button"
                 onClick={() => navigate('/forgot-password')}
@@ -87,14 +119,15 @@ const Login = () => {
               >
                 Şifremi unuttum
               </button>
-              <Button
-                type="submit"
-                isLoading={isLoading}
-                className="bg-white/90 text-primary-900 hover:bg-white border-0 shadow-lg font-bold"
-              >
-                Giriş Yap
-              </Button>
             </div>
+
+            <Button
+              type="submit"
+              isLoading={isLoading}
+              className="w-full bg-white/90 text-primary-900 hover:bg-white border-0 shadow-lg font-bold"
+            >
+              Giriş Yap
+            </Button>
           </form>
         </div>
       </div>
