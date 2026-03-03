@@ -1458,7 +1458,15 @@ const Admin = () => {
               <label className="block text-sm font-medium text-neutral-700 mb-1">Yetkili Depolar</label>
               <div className="grid grid-cols-2 gap-2">
                 {depots
-                  .filter(depot => !userFormData.companyId || depot.CompanyID === userFormData.companyId)
+                  .filter(depot => {
+                    const selectedCompanyIds = userFormData.companyIds && userFormData.companyIds.length > 0 
+                      ? userFormData.companyIds 
+                      : (userFormData.companyId ? [userFormData.companyId] : []);
+                    
+                    if (selectedCompanyIds.length === 0) return false;
+                    
+                    return selectedCompanyIds.includes(depot.CompanyID);
+                  })
                   .map((depot) => (
                   <label key={depot.DepotID} className="flex items-center space-x-2 p-2 border border-neutral-200 rounded-lg hover:bg-neutral-50">
                     <input
