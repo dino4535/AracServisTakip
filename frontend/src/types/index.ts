@@ -191,6 +191,7 @@ export interface ServiceRequest {
   ActualCost?: number;
   ServiceCompany?: string;
   ServiceCompanyID?: number;
+  ServiceCompanyName?: string;
   DriverName?: string;
   DeliveredBy?: string;
   ExtraWork?: string;

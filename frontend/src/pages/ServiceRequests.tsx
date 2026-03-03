@@ -299,6 +299,7 @@ const ServiceRequests = () => {
                 <tr>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Araç</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Açıklama</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Servis Firması</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Öncelik</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Durum</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Talep Eden</th>
@@ -329,6 +330,9 @@ const ServiceRequests = () => {
                     <td className="px-6 py-4 text-sm text-neutral-600 max-w-xs truncate">
                       {request.Description}
                     </td>
+                  <td className="px-6 py-4 text-sm text-neutral-600">
+                    {request.ServiceCompanyName || '-'}
+                  </td>
                     <td className="px-6 py-4">
                       <span className={`inline-block w-2 h-2 rounded-full mr-2 ${getPriorityColor(request.Priority).replace('bg-', 'bg-opacity-50 ')}`}></span>
                       <span className="text-sm text-neutral-600">{request.Priority}</span>
@@ -421,6 +425,9 @@ const ServiceRequests = () => {
                     <div className="mt-1 text-xs text-neutral-500 space-y-1">
                       <div className="line-clamp-2">
                         {request.Description}
+                      </div>
+                      <div>
+                        Servis: {request.ServiceCompanyName || '-'}
                       </div>
                       <div>
                         Talep Eden: {request.RequesterName || '-'}
