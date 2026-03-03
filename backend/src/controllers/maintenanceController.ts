@@ -356,6 +356,31 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
     const pool = await connectDB();
     const { search } = req.query;
     const companyId = req.user?.CompanyID;
+    const userId = req.user?.UserID;
+    const userRole = req.user?.Role;
+    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+
+    let userDepotIds: number[] = [];
+    if (!isSuperAdmin && userId) {
+      const depotResult = await pool.request()
+        .input('UserID', sql.Int, userId)
+        .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
+
+      userDepotIds = depotResult.recordset
+        .map((row: any) => row.DepotID)
+        .filter((id: any) => id !== null && id !== undefined);
+    }
+
+    let accessClause = `WHERE v.Status = 'Active'`;
+    if (!isSuperAdmin) {
+      if (userDepotIds.length > 0) {
+        accessClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+      } else if (companyId) {
+        accessClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+      } else {
+        accessClause += ` AND v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`;
+      }
+    }
 
     let query = `
       WITH AllKm AS (
@@ -415,19 +440,18 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
       FROM Vehicles v
       LEFT JOIN KmStats ks ON v.VehicleID = ks.VehicleID
       LEFT JOIN LastMaintenance lm ON v.VehicleID = lm.VehicleID
-      WHERE v.Status = 'Active'
+      ${accessClause}
     `;
-
-    if (companyId) {
-      query += ` AND v.CompanyID = @CompanyID`;
-    }
 
     if (search) {
       query += ` AND (v.Plate LIKE '%' + @SearchTerm + '%' OR v.Make LIKE '%' + @SearchTerm + '%' OR v.Model LIKE '%' + @SearchTerm + '%')`;
     }
 
     const request = pool.request();
-    if (companyId) {
+    if (!isSuperAdmin && userId) {
+      request.input('UserID', sql.Int, userId);
+    }
+    if (!isSuperAdmin && companyId) {
       request.input('CompanyID', sql.Int, companyId);
     }
 
