@@ -72,6 +72,11 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
       accessConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
 
       whereClause += ` AND (${accessConditions.join(' OR ')})`;
+      
+      // Add optional company filter if provided in query
+      if (companyId) {
+        whereClause += ` AND v.CompanyID = @FilterCompanyID`;
+      }
     } else if (companyId) {
       whereClause += ` AND v.CompanyID = @FilterCompanyID`;
     }
@@ -123,6 +128,7 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
     if (!isSuperAdmin) {
       if (userCompanyId) request.input('UserCompanyID', sql.Int, userCompanyId);
       if (userId) request.input('UserID', sql.Int, userId);
+      if (companyId) request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
     } else if (companyId) {
       request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
     }
@@ -192,6 +198,11 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
       accessConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
 
       whereClause += ` AND (${accessConditions.join(' OR ')})`;
+
+      // Add optional company filter if provided in query
+      if (companyId) {
+        whereClause += ` AND v.CompanyID = @FilterCompanyID`;
+      }
     } else if (companyId) {
       whereClause += ` AND v.CompanyID = @FilterCompanyID`;
     }
