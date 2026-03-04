@@ -136,4 +136,9 @@ export const adminService = {
   triggerJobReminder: async (): Promise<void> => {
     await api.post('/settings/trigger-reminders');
   },
+  
+  testJobReminder: async (): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>('/settings/test-reminders');
+    return response.data;
+  },
 };

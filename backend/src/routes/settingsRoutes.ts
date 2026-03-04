@@ -3,7 +3,7 @@ import express from 'express';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
 import { PERMISSIONS } from '../utils/constants';
-import { getSetting, updateSetting, getAllSettings, triggerReminders } from '../controllers/settingsController';
+import { getSetting, updateSetting, getAllSettings, triggerReminders, testReminders } from '../controllers/settingsController';
 
 const router = express.Router();
 
@@ -41,6 +41,20 @@ router.get('/', authenticate, authorize(PERMISSIONS.ADMIN.SETTINGS), getAllSetti
  *         description: Job triggered successfully
  */
 router.post('/trigger-reminders', authenticate, authorize(PERMISSIONS.ADMIN.SETTINGS), triggerReminders);
+
+/**
+ * @swagger
+ * /settings/test-reminders:
+ *   post:
+ *     summary: Send test reminders to current user
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Test triggered successfully
+ */
+router.post('/test-reminders', authenticate, authorize(PERMISSIONS.ADMIN.SETTINGS), testReminders);
 
 /**
  * @swagger

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { adminService } from '../../services/adminService';
 import Button from '../common/Button';
-import { Save, AlertCircle, CheckCircle, Play, Clock } from 'lucide-react';
+import { Save, AlertCircle, CheckCircle, Play, Clock, Send } from 'lucide-react';
 
 type Message = { type: 'success' | 'error'; text: string } | null;
 
 const JobEmailSettings = () => {
   const [loading, setLoading] = useState(false);
   const [triggerLoading, setTriggerLoading] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
   const [inspectionReminderEmails, setInspectionReminderEmails] = useState(true);
@@ -124,19 +125,50 @@ const JobEmailSettings = () => {
     }
   };
 
+  const handleTestReminders = async () => {
+    try {
+      setTestLoading(true);
+      const response = await adminService.testJobReminder();
+      setMessage({
+        type: 'success',
+        text: response.message || 'Test işlemi başlatıldı.',
+      });
+      setTimeout(() => setMessage(null), 5000);
+    } catch (error) {
+      console.error('Test error:', error);
+      setMessage({
+        type: 'error',
+        text: 'Test işlemi sırasında bir hata oluştu.',
+      });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold">Job E-posta Ayarları</h2>
-        <Button 
-          variant="secondary" 
-          onClick={handleTriggerManual} 
-          disabled={triggerLoading || loading}
-          className="text-primary-600 border-primary-600 hover:bg-primary-50"
-        >
-          <Play size={16} className="mr-2" />
-          {triggerLoading ? 'Çalışıyor...' : 'Şimdi Tetikle'}
-        </Button>
+        <div className="flex space-x-2">
+          <Button 
+            variant="secondary" 
+            onClick={handleTestReminders} 
+            disabled={testLoading || triggerLoading || loading}
+            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+          >
+            <Send size={16} className="mr-2" />
+            {testLoading ? 'Test Ediliyor...' : 'Test Et'}
+          </Button>
+          <Button 
+            variant="secondary" 
+            onClick={handleTriggerManual} 
+            disabled={triggerLoading || loading || testLoading}
+            className="text-primary-600 border-primary-600 hover:bg-primary-50"
+          >
+            <Play size={16} className="mr-2" />
+            {triggerLoading ? 'Çalışıyor...' : 'Şimdi Tetikle'}
+          </Button>
+        </div>
       </div>
 
       {message && (

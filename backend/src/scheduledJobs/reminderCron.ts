@@ -464,6 +464,235 @@ export const runRemindersManually = async () => {
   console.log('✅ Manual reminder job completed.');
 };
 
+export const runTestReminders = async (targetEmail: string) => {
+  console.log(`🚀 Running TEST reminders for ${targetEmail}...`);
+  const pool = await connectDB();
+
+  // 1. Test Inspection Reminder (Manager Style)
+  const inspectionResult = await pool.request().query(`
+    SELECT TOP 1
+      vi.InspectionID,
+      vi.NextInspectionDate,
+      vi.Cost,
+      v.VehicleID,
+      v.Plate,
+      v.CompanyID,
+      c.Name as CompanyName,
+      v.DepotID,
+      dp.Name as DepotName,
+      v.ManagerID,
+      m.Email as ManagerEmail, m.Name as ManagerName, m.Surname as ManagerSurname
+    FROM VehicleInspections vi
+    JOIN Vehicles v ON vi.VehicleID = v.VehicleID
+    JOIN Companies c ON v.CompanyID = c.CompanyID
+    LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
+    LEFT JOIN Users m ON v.ManagerID = m.UserID
+    WHERE vi.NextInspectionDate > GETDATE()
+      AND vi.NextInspectionDate <= DATEADD(DAY, 30, GETDATE())
+      AND v.ManagerID IS NOT NULL
+  `);
+
+  if (inspectionResult.recordset.length > 0) {
+    const record = inspectionResult.recordset[0];
+    const daysUntil = Math.ceil((new Date(record.NextInspectionDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    const dateStr = new Date(record.NextInspectionDate).toLocaleDateString('tr-TR');
+    const message = `Araç ${record.Plate} için muayene tarihine ${daysUntil} gün kaldı (tarih: ${dateStr}). Yoğunluk ve ceza risklerini önlemek için en kısa sürede muayene randevusu alınması gerekmektedir.`;
+    
+    await sendEmail(targetEmail, `[TEST] Muayene Hatırlatması - ${record.Plate}`, message);
+    console.log(`✅ Test Inspection Reminder (Manager) sent to ${targetEmail}`);
+  } else {
+    console.log('ℹ️ No data found for Test Inspection Reminder (Manager)');
+  }
+
+  // 2. Test Inspection Reminder (Admin Bulk Style)
+  const inspectionBulkResult = await pool.request().query(`
+    SELECT TOP 5
+      vi.InspectionID,
+      vi.NextInspectionDate,
+      vi.Cost,
+      v.VehicleID,
+      v.Plate,
+      v.CompanyID,
+      c.Name as CompanyName,
+      v.DepotID,
+      dp.Name as DepotName,
+      v.AssignedDriverID as DriverID,
+      d.Email as DriverEmail, d.Name as DriverName, d.Surname as DriverSurname
+    FROM VehicleInspections vi
+    JOIN Vehicles v ON vi.VehicleID = v.VehicleID
+    JOIN Companies c ON v.CompanyID = c.CompanyID
+    LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
+    LEFT JOIN Users d ON v.AssignedDriverID = d.UserID
+    WHERE vi.NextInspectionDate > GETDATE()
+      AND vi.NextInspectionDate <= DATEADD(DAY, 30, GETDATE())
+  `);
+
+  if (inspectionBulkResult.recordset.length > 0) {
+    const inspections = inspectionBulkResult.recordset.map((r: any) => ({
+      ...r,
+      daysUntil: Math.ceil((new Date(r.NextInspectionDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    }));
+    const companyName = inspections[0].CompanyName;
+    
+    const htmlTable = `
+        <h3>[TEST] ${companyName} - Yaklaşan Muayeneler</h3>
+        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+            <tr style="background-color: #f2f2f2;">
+                <th>Plaka</th>
+                <th>Şirket</th>
+                <th>Depo</th>
+                <th>Tarih</th>
+                <th>Kalan Gün</th>
+                <th>Sürücü</th>
+                <th>Maliyet</th>
+            </tr>
+            ${inspections.map((i: any) => `
+                <tr>
+                    <td>${i.Plate}</td>
+                    <td>${i.CompanyName}</td>
+                    <td>${i.DepotName || '-'}</td>
+                    <td>${new Date(i.NextInspectionDate).toLocaleDateString('tr-TR')}</td>
+                    <td>${i.daysUntil}</td>
+                    <td>${i.DriverName ? i.DriverName + ' ' + (i.DriverSurname || '') : '-'}</td>
+                    <td>${i.Cost ? i.Cost + ' TL' : '-'}</td>
+                </tr>
+            `).join('')}
+        </table>
+    `;
+    
+    await sendEmail(targetEmail, `[TEST] ${companyName} - Haftalık Muayene Hatırlatmaları`, htmlTable);
+    console.log(`✅ Test Inspection Reminder (Bulk Admin) sent to ${targetEmail}`);
+  } else {
+    console.log('ℹ️ No data found for Test Inspection Reminder (Bulk Admin)');
+  }
+
+  // 3. Test Overdue Inspection (Admin Bulk Style)
+  const overdueResult = await pool.request().query(`
+    SELECT TOP 5
+      vi.InspectionID,
+      vi.NextInspectionDate,
+      v.VehicleID,
+      v.Plate,
+      v.CompanyID,
+      c.Name as CompanyName,
+      v.DepotID,
+      dp.Name as DepotName,
+      v.ManagerID,
+      m.Name as ManagerName,
+      m.Surname as ManagerSurname
+    FROM VehicleInspections vi
+    JOIN Vehicles v ON vi.VehicleID = v.VehicleID
+    JOIN Companies c ON v.CompanyID = c.CompanyID
+    LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
+    LEFT JOIN Users m ON v.ManagerID = m.UserID
+    WHERE vi.NextInspectionDate < GETDATE()
+  `);
+
+  if (overdueResult.recordset.length > 0) {
+    const records = overdueResult.recordset.map((r: any) => ({
+      ...r,
+      daysOverdue: Math.ceil((new Date().getTime() - new Date(r.NextInspectionDate).getTime()) / (1000 * 60 * 60 * 24)),
+      dateStr: new Date(r.NextInspectionDate).toLocaleDateString('tr-TR')
+    }));
+    const companyName = records[0].CompanyName;
+
+    const htmlTable = `
+      <h3>[TEST] ${companyName} - Vizesi Geçmiş Araçlar</h3>
+      <p>Aşağıda yer alan araçların muayene vize tarihleri geçmiştir. Muayene randevularının alınarak işlemlerin en kısa sürede tamamlanması gerekmektedir.</p>
+      <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <tr style="background-color: #f2f2f2;">
+          <th>Plaka</th>
+          <th>Şirket</th>
+          <th>Depo</th>
+          <th>Vize Tarihi</th>
+          <th>Gecikme (Gün)</th>
+          <th>Yönetici</th>
+        </tr>
+        ${records.map((r: any) => `
+          <tr>
+            <td>${r.Plate}</td>
+            <td>${r.CompanyName}</td>
+            <td>${r.DepotName || '-'}</td>
+            <td>${r.dateStr}</td>
+            <td>${r.daysOverdue}</td>
+            <td>${r.ManagerName ? r.ManagerName + ' ' + (r.ManagerSurname || '') : '-'}</td>
+          </tr>
+        `).join('')}
+      </table>
+    `;
+
+    await sendEmail(targetEmail, `[TEST] ${companyName} - Vizesi Geçmiş Araçlar`, htmlTable);
+    console.log(`✅ Test Overdue Inspection (Bulk Admin) sent to ${targetEmail}`);
+  } else {
+    console.log('ℹ️ No data found for Test Overdue Inspection');
+  }
+
+  // 4. Test Insurance Reminder (Admin Bulk Style)
+  const insuranceResult = await pool.request().query(`
+    SELECT TOP 5
+      i.InsuranceID,
+      i.EndDate,
+      i.Type,
+      i.InsuranceCompany,
+      i.Cost,
+      v.VehicleID,
+      v.Plate,
+      v.CompanyID,
+      c.Name as CompanyName,
+      v.DepotID,
+      dp.Name as DepotName
+    FROM InsuranceRecords i
+    JOIN Vehicles v ON i.VehicleID = v.VehicleID
+    JOIN Companies c ON v.CompanyID = c.CompanyID
+    LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
+    WHERE i.EndDate > GETDATE()
+      AND i.EndDate <= DATEADD(DAY, 30, GETDATE())
+  `);
+
+  if (insuranceResult.recordset.length > 0) {
+    const records = insuranceResult.recordset.map((r: any) => ({
+      ...r,
+      daysUntil: Math.ceil((new Date(r.EndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    }));
+    const companyName = records[0].CompanyName;
+
+    const htmlContent = `
+      <h3>[TEST] ${companyName} - Yaklaşan Sigorta/Kasko Bitişleri</h3>
+      <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <tr style="background-color: #f2f2f2;">
+          <th>Plaka</th>
+          <th>Şirket</th>
+          <th>Depo</th>
+          <th>Tür</th>
+          <th>Sigorta Şirketi</th>
+          <th>Bitiş Tarihi</th>
+          <th>Kalan Gün</th>
+          <th>Tutar</th>
+        </tr>
+        ${records.map((r: any) => `
+          <tr>
+            <td>${r.Plate}</td>
+            <td>${r.CompanyName}</td>
+            <td>${r.DepotName || '-'}</td>
+            <td>${r.Type}</td>
+            <td>${r.InsuranceCompany || '-'}</td>
+            <td>${new Date(r.EndDate).toLocaleDateString('tr-TR')}</td>
+            <td>${r.daysUntil}</td>
+            <td>${r.Cost ? r.Cost + ' TL' : '-'}</td>
+          </tr>
+        `).join('')}
+      </table>
+    `;
+
+    await sendEmail(targetEmail, `[TEST] ${companyName} - Sigorta/Kasko Hatırlatmaları`, htmlContent);
+    console.log(`✅ Test Insurance Reminder (Bulk Admin) sent to ${targetEmail}`);
+  } else {
+    console.log('ℹ️ No data found for Test Insurance Reminder');
+  }
+
+  console.log('✅ Test reminder job completed.');
+};
+
 let reminderTask: cron.ScheduledTask | null = null;
 
 export const startReminderCron = async () => {

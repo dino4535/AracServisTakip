@@ -2,7 +2,7 @@
 import { Request, Response } from 'express';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
-import { runRemindersManually, restartReminderCron } from '../scheduledJobs/reminderCron';
+import { runRemindersManually, restartReminderCron, runTestReminders } from '../scheduledJobs/reminderCron';
 
 export const getSetting = async (req: Request, res: Response) => {
   try {
@@ -71,6 +71,29 @@ export const triggerReminders = async (req: Request, res: Response) => {
     res.json({ message: 'Job tetiklendi, arka planda çalışıyor.' });
   } catch (error) {
     console.error('Trigger error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const testReminders = async (req: Request, res: Response) => {
+  try {
+    // Check if user has email
+    const userEmail = (req as any).user?.Email;
+    if (!userEmail) {
+      return res.status(400).json({ message: 'Kullanıcının e-posta adresi bulunamadı.' });
+    }
+
+    // Run test reminders in background but await a bit or just fire and forget?
+    // User wants to see it, so we should await it if it's fast enough, but sending emails takes time.
+    // However, for a "Test" button, user usually expects immediate feedback.
+    // Given we send max 4 emails, it might take 4-8 seconds with delays.
+    // Let's fire and forget but tell user to check email.
+    
+    runTestReminders(userEmail).catch(err => console.error('Test trigger failed:', err));
+    
+    res.json({ message: `Test işlemi başlatıldı. Örnek mailler ${userEmail} adresine gönderilecektir.` });
+  } catch (error) {
+    console.error('Test trigger error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
