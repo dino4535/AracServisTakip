@@ -60,15 +60,21 @@ const checkInspectionReminders = async () => {
       SELECT 
         vi.InspectionID,
         vi.NextInspectionDate,
+        vi.Cost,
         v.VehicleID,
         v.Plate,
         v.CompanyID,
+        c.Name as CompanyName,
+        v.DepotID,
+        dp.Name as DepotName,
         v.AssignedDriverID as DriverID,
         v.ManagerID,
         d.Email as DriverEmail, d.Name as DriverName, d.Surname as DriverSurname,
         m.Email as ManagerEmail, m.Name as ManagerName, m.Surname as ManagerSurname
       FROM VehicleInspections vi
       JOIN Vehicles v ON vi.VehicleID = v.VehicleID
+      JOIN Companies c ON v.CompanyID = c.CompanyID
+      LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
       LEFT JOIN Users d ON v.AssignedDriverID = d.UserID
       LEFT JOIN Users m ON v.ManagerID = m.UserID
       WHERE vi.NextInspectionDate > GETDATE()
@@ -153,16 +159,28 @@ const checkInspectionReminders = async () => {
         const admins = await getCompanyAdmins(pool, parseInt(companyId));
         if (admins.length === 0 || inspections.length === 0) continue;
 
+        const companyName = inspections[0].CompanyName;
         const htmlTable = `
-            <h3>Yaklaşan Muayeneler</h3>
-            <table border="1" cellpadding="5" cellspacing="0">
-                <tr><th>Plaka</th><th>Tarih</th><th>Kalan Gün</th><th>Sürücü</th></tr>
+            <h3>${companyName} - Yaklaşan Muayeneler</h3>
+            <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+                <tr style="background-color: #f2f2f2;">
+                    <th>Plaka</th>
+                    <th>Şirket</th>
+                    <th>Depo</th>
+                    <th>Tarih</th>
+                    <th>Kalan Gün</th>
+                    <th>Sürücü</th>
+                    <th>Maliyet</th>
+                </tr>
                 ${inspections.map((i: any) => `
                     <tr>
                         <td>${i.Plate}</td>
+                        <td>${i.CompanyName}</td>
+                        <td>${i.DepotName || '-'}</td>
                         <td>${new Date(i.NextInspectionDate).toLocaleDateString('tr-TR')}</td>
                         <td>${i.daysUntil}</td>
-                        <td>${i.DriverName || '-'}</td>
+                        <td>${i.DriverName ? i.DriverName + ' ' + (i.DriverSurname || '') : '-'}</td>
+                        <td>${i.Cost ? i.Cost + ' TL' : '-'}</td>
                     </tr>
                 `).join('')}
             </table>
@@ -170,7 +188,7 @@ const checkInspectionReminders = async () => {
 
         for (const admin of admins) {
             await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Haftalık Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined);
-            const success = await sendEmail(admin.Email, 'Haftalık Muayene Hatırlatmaları', htmlTable);
+            const success = await sendEmail(admin.Email, `${companyName} - Haftalık Muayene Hatırlatmaları`, htmlTable);
             await logAudit(
               undefined,
               'JOB_INSPECTION_REMINDER_EMAIL',
@@ -215,12 +233,17 @@ const checkInspectionOverdue = async () => {
         v.VehicleID,
         v.Plate,
         v.CompanyID,
+        c.Name as CompanyName,
+        v.DepotID,
+        dp.Name as DepotName,
         v.ManagerID,
         m.Email as ManagerEmail,
         m.Name as ManagerName,
         m.Surname as ManagerSurname
       FROM VehicleInspections vi
       JOIN Vehicles v ON vi.VehicleID = v.VehicleID
+      JOIN Companies c ON v.CompanyID = c.CompanyID
+      LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
       LEFT JOIN Users m ON v.ManagerID = m.UserID
       WHERE vi.NextInspectionDate < GETDATE()
     `);
@@ -294,16 +317,26 @@ const checkInspectionOverdue = async () => {
       const admins = await getCompanyAdmins(pool, parseInt(companyId, 10));
       if (admins.length === 0 || records.length === 0) continue;
 
+      const companyName = records[0].CompanyName;
       const htmlTable = `
-        <h3>Vizesi Geçmiş Araçlar</h3>
+        <h3>${companyName} - Vizesi Geçmiş Araçlar</h3>
         <p>Aşağıda yer alan araçların muayene vize tarihleri geçmiştir. Muayene randevularının alınarak işlemlerin en kısa sürede tamamlanması gerekmektedir.</p>
-        <table border="1" cellpadding="5" cellspacing="0">
-          <tr><th>Plaka</th><th>Vize Tarihi</th><th>Gecikme (Gün)</th><th>Yönetici</th></tr>
+        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+          <tr style="background-color: #f2f2f2;">
+            <th>Plaka</th>
+            <th>Şirket</th>
+            <th>Depo</th>
+            <th>Vize Tarihi</th>
+            <th>Gecikme (Gün)</th>
+            <th>Yönetici</th>
+          </tr>
           ${records
             .map(
               (r: any) => `
             <tr>
               <td>${r.Plate}</td>
+              <td>${r.CompanyName}</td>
+              <td>${r.DepotName || '-'}</td>
               <td>${r.dateStr}</td>
               <td>${r.daysOverdue}</td>
               <td>${r.ManagerName ? r.ManagerName + ' ' + (r.ManagerSurname || '') : '-'}</td>
@@ -324,7 +357,7 @@ const checkInspectionOverdue = async () => {
         );
         const success = await sendEmail(
           admin.Email,
-          'Vizesi Geçmiş Araçlar - Haftalık Muayene Raporu',
+          `${companyName} - Vizesi Geçmiş Araçlar - Haftalık Muayene Raporu`,
           htmlTable
         );
         await logAudit(
@@ -369,11 +402,18 @@ const checkInsuranceReminders = async () => {
         i.InsuranceID,
         i.EndDate,
         i.Type,
+        i.InsuranceCompany,
+        i.Cost,
         v.VehicleID,
         v.Plate,
-        v.CompanyID
+        v.CompanyID,
+        c.Name as CompanyName,
+        v.DepotID,
+        dp.Name as DepotName
       FROM InsuranceRecords i
       JOIN Vehicles v ON i.VehicleID = v.VehicleID
+      JOIN Companies c ON v.CompanyID = c.CompanyID
+      LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
       WHERE i.EndDate > GETDATE()
         AND i.EndDate <= DATEADD(DAY, 30, GETDATE())
     `);
@@ -391,6 +431,7 @@ const checkInsuranceReminders = async () => {
       const admins = await getCompanyAdmins(pool, parseInt(companyId));
       if (admins.length === 0 || records.length === 0) continue;
 
+      const companyName = records[0].CompanyName;
       const rowsHtml = records
         .map(
           (r: any, index: number) => `
@@ -398,9 +439,13 @@ const checkInsuranceReminders = async () => {
               index % 2 === 0 ? '#ffffff' : '#f9fafb'
             };">
               <td style="padding: 8px 10px; font-size: 13px;">${r.Plate}</td>
+              <td style="padding: 8px 10px; font-size: 13px;">${r.CompanyName}</td>
+              <td style="padding: 8px 10px; font-size: 13px;">${r.DepotName || '-'}</td>
               <td style="padding: 8px 10px; font-size: 13px;">${r.Type}</td>
+              <td style="padding: 8px 10px; font-size: 13px;">${r.InsuranceCompany || '-'}</td>
               <td style="padding: 8px 10px; font-size: 13px;">${new Date(r.EndDate).toLocaleDateString('tr-TR')}</td>
               <td style="padding: 8px 10px; font-size: 13px; text-align: right;">${r.daysUntil}</td>
+              <td style="padding: 8px 10px; font-size: 13px; text-align: right;">${r.Cost ? r.Cost + ' TL' : '-'}</td>
             </tr>
           `
         )
@@ -408,12 +453,12 @@ const checkInsuranceReminders = async () => {
 
       for (const admin of admins) {
         const fullName = [admin.Name, admin.Surname].filter(Boolean).join(' ');
-        const subject = 'Haftalık Sigorta/Kasko Hatırlatmaları';
+        const subject = `${companyName} - Haftalık Sigorta/Kasko Hatırlatmaları`;
 
         const htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
+          <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
             <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 16px;">
-              Haftalık Sigorta/Kasko Hatırlatmaları
+              ${companyName} - Haftalık Sigorta/Kasko Hatırlatmaları
             </h2>
             <p>Sayın ${fullName || 'Yetkili'},</p>
             <p>Şirketinize ait aşağıdaki araçların sigorta/kasko bitiş tarihleri yaklaşmaktadır. Bitiş tarihleri öncesinde poliçe yenileme işlemlerinin tamamlanması önemlidir.</p>
@@ -421,9 +466,13 @@ const checkInsuranceReminders = async () => {
               <thead>
                 <tr style="background-color: #f1f5f9; color: #111827;">
                   <th style="padding: 8px 10px; font-size: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Plaka</th>
+                  <th style="padding: 8px 10px; font-size: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Şirket</th>
+                  <th style="padding: 8px 10px; font-size: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Depo</th>
                   <th style="padding: 8px 10px; font-size: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Tip</th>
+                  <th style="padding: 8px 10px; font-size: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Sigorta Şirketi</th>
                   <th style="padding: 8px 10px; font-size: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Bitiş Tarihi</th>
                   <th style="padding: 8px 10px; font-size: 12px; text-align: right; border-bottom: 1px solid #e0e0e0;">Kalan Gün</th>
+                  <th style="padding: 8px 10px; font-size: 12px; text-align: right; border-bottom: 1px solid #e0e0e0;">Maliyet</th>
                 </tr>
               </thead>
               <tbody>
