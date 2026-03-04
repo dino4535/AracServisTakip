@@ -423,6 +423,10 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
           v.NextMaintenanceKm,
           v.Make,
           v.Model,
+          v.CompanyID,
+          v.DepotID,
+          c.Name as CompanyName,
+          d.Name as DepotName,
           ks.FirstDate,
           ks.LastDate,
           ks.FirstKm,
@@ -438,6 +442,8 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
           lm.LastServiceDate,
           lm.LastServiceKm
       FROM Vehicles v
+      LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
+      LEFT JOIN Depots d ON v.DepotID = d.DepotID
       LEFT JOIN KmStats ks ON v.VehicleID = ks.VehicleID
       LEFT JOIN LastMaintenance lm ON v.VehicleID = lm.VehicleID
       ${accessClause}

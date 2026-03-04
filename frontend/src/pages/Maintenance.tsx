@@ -4,7 +4,8 @@ import Layout from '../components/layout/Layout';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
-import { Wrench, Plus, Edit, Trash2, Car as CarIcon } from 'lucide-react';
+import { Wrench, Plus, Edit, Trash2, Car as CarIcon, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { maintenanceService } from '../services/maintenanceService';
 import { vehicleService } from '../services/vehicleService';
 import { MaintenanceRecord, Vehicle } from '../types';
@@ -44,6 +45,7 @@ const Maintenance = () => {
   const limit = 50;
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [predictionStatusFilter, setPredictionStatusFilter] = useState<'ALL' | 'Overdue' | 'Due Soon' | 'OK'>('ALL');
 
   // React Hook Form setup
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<MaintenanceFormData>({
@@ -85,6 +87,11 @@ const Maintenance = () => {
   const { data: predictions = [], isLoading: isLoadingPredictions } = useQuery<any[]>({
     queryKey: ['maintenancePredictions', searchTerm],
     queryFn: () => maintenanceService.getMaintenancePredictions(searchTerm || undefined),
+  });
+
+  const filteredPredictions = predictions.filter((p) => {
+    if (predictionStatusFilter === 'ALL') return true;
+    return p.Status === predictionStatusFilter;
   });
 
   // Mutations
@@ -204,6 +211,41 @@ const Maintenance = () => {
     }, 500);
 
     setDebounceTimer(timer);
+  };
+
+  const handleExportPredictions = () => {
+    const statusLabel =
+      predictionStatusFilter === 'Overdue'
+        ? 'Gecikmiş'
+        : predictionStatusFilter === 'Due Soon'
+          ? 'Yaklaşıyor'
+          : predictionStatusFilter === 'OK'
+            ? 'İyi Durumda'
+            : 'Tümü';
+
+    const exportRows = filteredPredictions.map((p) => ({
+      'Şirket': p.CompanyName || '-',
+      'Depo': p.DepotName || '-',
+      'Plaka': p.Plate || '-',
+      'Marka': p.Make || '-',
+      'Model': p.Model || '-',
+      'Mevcut KM': p.CurrentKm ?? '',
+      'Günlük Ort. KM': p.AvgDailyKm ?? '',
+      'Son Bakım KM': p.LastServiceKm ?? '',
+      'Son Bakım Tarihi': p.LastServiceDate ? formatDate(p.LastServiceDate) : '-',
+      'Sonraki Bakım (Hedef)': p.NextServiceKm ?? '',
+      'Kalan KM': p.RemainingKm ?? '',
+      'Tahmini Tarih': p.EstServiceDate ? formatDate(p.EstServiceDate) : '-',
+      'Kalan Gün': p.EstDaysRemaining ?? '',
+      'Durum': p.Status === 'Overdue' ? 'Gecikmiş' : p.Status === 'Due Soon' ? 'Yaklaşıyor' : 'İyi Durumda',
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Bakım Tahminleri');
+
+    const today = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `bakim-tahminleri-${statusLabel}-${today}.xlsx`);
   };
 
   return (
@@ -453,6 +495,39 @@ const Maintenance = () => {
               <div className="p-8 text-center text-neutral-500">Yükleniyor...</div>
             ) : (
               <>
+                <div className="p-4 border-b border-neutral-200 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+                    <div className="w-full md:w-56">
+                      <select
+                        value={predictionStatusFilter}
+                        onChange={(e) =>
+                          setPredictionStatusFilter(
+                            e.target.value as 'ALL' | 'Overdue' | 'Due Soon' | 'OK'
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                      >
+                        <option value="ALL">Durum: Tümü</option>
+                        <option value="Overdue">Durum: Gecikmiş</option>
+                        <option value="Due Soon">Durum: Yaklaşıyor</option>
+                        <option value="OK">Durum: İyi Durumda</option>
+                      </select>
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                      {filteredPredictions.length} kayıt
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleExportPredictions}
+                    disabled={filteredPredictions.length === 0}
+                    className="w-full md:w-auto justify-center"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Excel İndir
+                  </Button>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full hidden md:table">
                     <thead className="bg-neutral-50 border-b border-neutral-200">
@@ -468,7 +543,7 @@ const Maintenance = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
-                      {predictions.map((p) => (
+                      {filteredPredictions.map((p) => (
                         <tr key={p.VehicleID} className="hover:bg-neutral-50">
                           <td className="px-6 py-4 text-sm font-medium text-neutral-900">
                             <div className="flex flex-col">
@@ -525,7 +600,7 @@ const Maintenance = () => {
                 </div>
 
                 <div className="md:hidden divide-y divide-neutral-100">
-                  {predictions.map((p) => (
+                  {filteredPredictions.map((p) => (
                     <div key={p.VehicleID} className="p-4 flex flex-col gap-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -588,7 +663,7 @@ const Maintenance = () => {
                 </div>
               </>
             )}
-            {predictions.length === 0 && !isLoadingPredictions && (
+            {filteredPredictions.length === 0 && !isLoadingPredictions && (
               <div className="p-8 text-center text-neutral-500">
                 Veri bulunamadı.
               </div>
