@@ -6,8 +6,6 @@ import { createNotification } from '../services/notificationService';
 import { sendEmail } from '../services/emailService';
 import { logAudit } from '../services/auditService';
 
-const REMINDER_DAYS = [30, 20, 15, 10, 7, 5, 3, 2, 1];
-
 const getJobEmailSettings = async (pool: sql.ConnectionPool) => {
   const result = await pool
     .request()
@@ -58,10 +56,6 @@ const checkInspectionReminders = async () => {
       return;
     }
 
-    // Get inspections expiring in REMINDER_DAYS
-    // We need to check for each day in the array because simple <= 30 is not enough if we want specific days.
-    // Or we can fetch all within 30 days and filter in JS. Fetching all within 30 is safer.
-    
     const result = await pool.request().query(`
       SELECT 
         vi.InspectionID,
@@ -81,85 +75,77 @@ const checkInspectionReminders = async () => {
         AND vi.NextInspectionDate <= DATEADD(DAY, 30, GETDATE())
     `);
 
-    // Group for Admins? Prompt says "şirket yöneticisi admin e de bu bilgiler gitmeli".
-    // It doesn't explicitly say "bulk list" for inspections like it does for insurance.
-    // But sending 100 emails to admin is bad. Let's aggregate for admin too.
     const adminNotifications: Record<number, any[]> = {}; // CompanyID -> List of inspections
 
-    for (const record of result.recordset) {
+    for (const record of result.recordset as any[]) {
       const daysUntil = Math.ceil(
         (new Date(record.NextInspectionDate).getTime() - new Date().getTime()) /
           (1000 * 60 * 60 * 24)
       );
 
-      if (REMINDER_DAYS.includes(daysUntil)) {
-        const dateStr = new Date(record.NextInspectionDate).toLocaleDateString('tr-TR');
-        const message = `Araç ${record.Plate} için muayene tarihine ${daysUntil} gün kaldı (tarih: ${dateStr}). Yoğunluk ve ceza risklerini önlemek için en kısa sürede muayene randevusu alınması gerekmektedir.`;
-        
-        // 1. Notify Driver
-        if (record.DriverID) {
-            await createNotification(
-              record.DriverID,
-              'INSPECTION_REMINDER',
-              'Muayene Hatırlatması',
-              message,
-              record.InspectionID
+      const dateStr = new Date(record.NextInspectionDate).toLocaleDateString('tr-TR');
+      const message = `Araç ${record.Plate} için muayene tarihine ${daysUntil} gün kaldı (tarih: ${dateStr}). Yoğunluk ve ceza risklerini önlemek için en kısa sürede muayene randevusu alınması gerekmektedir.`;
+      
+      if (record.DriverID) {
+          await createNotification(
+            record.DriverID,
+            'INSPECTION_REMINDER',
+            'Muayene Hatırlatması',
+            message,
+            record.InspectionID
+          );
+          if (record.DriverEmail) {
+            const success = await sendEmail(record.DriverEmail, 'Muayene Hatırlatması', message);
+            await logAudit(
+              undefined,
+              'JOB_INSPECTION_REMINDER_EMAIL',
+              'JobEmails',
+              record.InspectionID,
+              {
+                jobType: 'INSPECTION_REMINDER',
+                recipientType: 'DRIVER',
+                recipientEmail: record.DriverEmail,
+                companyId: record.CompanyID,
+                plate: record.Plate,
+                daysUntil,
+                success
+              },
+              'SYSTEM_CRON'
             );
-            if (record.DriverEmail) {
-              const success = await sendEmail(record.DriverEmail, 'Muayene Hatırlatması', message);
-              await logAudit(
-                undefined,
-                'JOB_INSPECTION_REMINDER_EMAIL',
-                'JobEmails',
-                record.InspectionID,
-                {
-                  jobType: 'INSPECTION_REMINDER',
-                  recipientType: 'DRIVER',
-                  recipientEmail: record.DriverEmail,
-                  companyId: record.CompanyID,
-                  plate: record.Plate,
-                  daysUntil,
-                  success
-                },
-                'SYSTEM_CRON'
-              );
-            }
-        }
-
-        // 2. Notify Manager
-        if (record.ManagerID) {
-            await createNotification(
-              record.ManagerID,
-              'INSPECTION_REMINDER',
-              'Muayene Hatırlatması',
-              message,
-              record.InspectionID
-            );
-            if (record.ManagerEmail) {
-              const success = await sendEmail(record.ManagerEmail, 'Muayene Hatırlatması', message);
-              await logAudit(
-                undefined,
-                'JOB_INSPECTION_REMINDER_EMAIL',
-                'JobEmails',
-                record.InspectionID,
-                {
-                  jobType: 'INSPECTION_REMINDER',
-                  recipientType: 'MANAGER',
-                  recipientEmail: record.ManagerEmail,
-                  companyId: record.CompanyID,
-                  plate: record.Plate,
-                  daysUntil,
-                  success
-                },
-                'SYSTEM_CRON'
-              );
-            }
-        }
-
-        // 3. Add to Admin List
-        if (!adminNotifications[record.CompanyID]) adminNotifications[record.CompanyID] = [];
-        adminNotifications[record.CompanyID].push({ ...record, daysUntil });
+          }
       }
+
+      if (record.ManagerID) {
+          await createNotification(
+            record.ManagerID,
+            'INSPECTION_REMINDER',
+            'Muayene Hatırlatması',
+            message,
+            record.InspectionID
+          );
+          if (record.ManagerEmail) {
+            const success = await sendEmail(record.ManagerEmail, 'Muayene Hatırlatması', message);
+            await logAudit(
+              undefined,
+              'JOB_INSPECTION_REMINDER_EMAIL',
+              'JobEmails',
+              record.InspectionID,
+              {
+                jobType: 'INSPECTION_REMINDER',
+                recipientType: 'MANAGER',
+                recipientEmail: record.ManagerEmail,
+                companyId: record.CompanyID,
+                plate: record.Plate,
+                daysUntil,
+                success
+              },
+              'SYSTEM_CRON'
+            );
+          }
+      }
+
+      if (!adminNotifications[record.CompanyID]) adminNotifications[record.CompanyID] = [];
+      adminNotifications[record.CompanyID].push({ ...record, daysUntil });
     }
 
     // Send Bulk to Admins
@@ -183,8 +169,8 @@ const checkInspectionReminders = async () => {
         `;
 
         for (const admin of admins) {
-            await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Günlük Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined);
-            const success = await sendEmail(admin.Email, 'Günlük Muayene Hatırlatmaları', htmlTable);
+            await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Haftalık Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined);
+            const success = await sendEmail(admin.Email, 'Haftalık Muayene Hatırlatmaları', htmlTable);
             await logAudit(
               undefined,
               'JOB_INSPECTION_REMINDER_EMAIL',
@@ -237,7 +223,6 @@ const checkInspectionOverdue = async () => {
       JOIN Vehicles v ON vi.VehicleID = v.VehicleID
       LEFT JOIN Users m ON v.ManagerID = m.UserID
       WHERE vi.NextInspectionDate < GETDATE()
-        AND vi.NextInspectionDate >= DATEADD(DAY, -30, GETDATE())
     `);
 
     const adminOverdue: Record<number, any[]> = {};
@@ -313,7 +298,7 @@ const checkInspectionOverdue = async () => {
         <h3>Vizesi Geçmiş Araçlar</h3>
         <p>Aşağıda yer alan araçların muayene vize tarihleri geçmiştir. Muayene randevularının alınarak işlemlerin en kısa sürede tamamlanması gerekmektedir.</p>
         <table border="1" cellpadding="5" cellspacing="0">
-          <tr><th>Plaka</th><thVize Tarihi</th><th>Gecikme (Gün)</th><th>Yönetici</th></tr>
+          <tr><th>Plaka</th><th>Vize Tarihi</th><th>Gecikme (Gün)</th><th>Yönetici</th></tr>
           ${records
             .map(
               (r: any) => `
@@ -339,7 +324,7 @@ const checkInspectionOverdue = async () => {
         );
         const success = await sendEmail(
           admin.Email,
-          'Vizesi Geçmiş Araçlar - Günlük Muayene Raporu',
+          'Vizesi Geçmiş Araçlar - Haftalık Muayene Raporu',
           htmlTable
         );
         await logAudit(
@@ -398,10 +383,8 @@ const checkInsuranceReminders = async () => {
     for (const record of result.recordset) {
       const daysUntil = Math.ceil((new Date(record.EndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
 
-      if (REMINDER_DAYS.includes(daysUntil)) {
-        if (!adminNotifications[record.CompanyID]) adminNotifications[record.CompanyID] = [];
-        adminNotifications[record.CompanyID].push({ ...record, daysUntil });
-      }
+      if (!adminNotifications[record.CompanyID]) adminNotifications[record.CompanyID] = [];
+      adminNotifications[record.CompanyID].push({ ...record, daysUntil });
     }
 
     for (const [companyId, records] of Object.entries(adminNotifications)) {
@@ -425,12 +408,12 @@ const checkInsuranceReminders = async () => {
 
       for (const admin of admins) {
         const fullName = [admin.Name, admin.Surname].filter(Boolean).join(' ');
-        const subject = 'Günlük Sigorta/Kasko Hatırlatmaları';
+        const subject = 'Haftalık Sigorta/Kasko Hatırlatmaları';
 
         const htmlContent = `
           <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
             <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 16px;">
-              Günlük Sigorta/Kasko Hatırlatmaları
+              Haftalık Sigorta/Kasko Hatırlatmaları
             </h2>
             <p>Sayın ${fullName || 'Yetkili'},</p>
             <p>Şirketinize ait aşağıdaki araçların sigorta/kasko bitiş tarihleri yaklaşmaktadır. Bitiş tarihleri öncesinde poliçe yenileme işlemlerinin tamamlanması önemlidir.</p>
@@ -448,7 +431,7 @@ const checkInsuranceReminders = async () => {
               </tbody>
             </table>
             <p style="font-size: 12px; color: #6b7280;">
-              Bu liste, önümüzdeki 30 gün içerisinde bitişi olan poliçeler için belirlenen hatırlatma günlerinde (30, 20, 15, 10, 7, 5, 3, 2, 1 gün kala) oluşturulmuştur.
+              Bu liste, önümüzdeki 30 gün içerisinde bitişi olan poliçeler için oluşturulmuştur.
             </p>
             <div style="margin-top: 24px; font-size: 12px; color: #7f8c8d; border-top: 1px solid #eceff1; padding-top: 10px; text-align: center;">
               <p>Bu e-posta sistem tarafından otomatik olarak oluşturulmuştur. Lütfen yanıtlamayınız.</p>
@@ -460,7 +443,7 @@ const checkInsuranceReminders = async () => {
         await createNotification(
           admin.UserID,
           'BULK_INSURANCE_REMINDER',
-          'Günlük Sigorta Raporu',
+          'Haftalık Sigorta Raporu',
           `${records.length} aracın sigortası bitiyor.`,
           undefined
         );
@@ -506,28 +489,25 @@ export const startReminderCron = async () => {
       .input('Key', sql.NVarChar(50), 'job_reminder_schedule')
       .query('SELECT SettingValue FROM SystemSettings WHERE SettingKey = @Key');
     
-    // Default to 09:00 if not set
-    // Format in DB: "HH:mm" (e.g. "09:00")
-    // Cron expects: "minute hour * * *"
-    let schedule = '0 9 * * *'; 
-    let timeStr = '09:00';
+    let schedule = '0 23 * * 0'; 
+    let timeStr = '23:00';
 
     if (result.recordset.length > 0 && result.recordset[0].SettingValue) {
       timeStr = result.recordset[0].SettingValue;
       const [hour, minute] = timeStr.split(':');
       if (hour && minute) {
-        schedule = `${parseInt(minute)} ${parseInt(hour)} * * *`;
+        schedule = `${parseInt(minute)} ${parseInt(hour)} * * 0`;
       }
     }
 
-    console.log(`⏰ Starting daily reminder cron job at ${timeStr} (${schedule})...`);
+    console.log(`⏰ Starting weekly reminder cron job (Sundays) at ${timeStr} (${schedule})...`);
     
     if (reminderTask) {
       reminderTask.stop();
     }
 
     reminderTask = cron.schedule(schedule, async () => {
-      console.log('⏰ Running daily reminder cron job...');
+      console.log('⏰ Running weekly reminder cron job...');
       await checkInspectionReminders();
       await checkInspectionOverdue();
       await checkInsuranceReminders();
@@ -535,7 +515,7 @@ export const startReminderCron = async () => {
   } catch (error) {
     console.error('Failed to start reminder cron:', error);
     // Fallback to default
-    reminderTask = cron.schedule('0 9 * * *', async () => {
+    reminderTask = cron.schedule('0 23 * * 0', async () => {
         await checkInspectionReminders();
         await checkInspectionOverdue();
         await checkInsuranceReminders();
