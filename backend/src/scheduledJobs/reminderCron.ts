@@ -6,6 +6,8 @@ import { createNotification } from '../services/notificationService';
 import { sendEmail } from '../services/emailService';
 import { logAudit } from '../services/auditService';
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const getJobEmailSettings = async (pool: sql.ConnectionPool) => {
   const result = await pool
     .request()
@@ -92,35 +94,8 @@ const checkInspectionReminders = async () => {
       const dateStr = new Date(record.NextInspectionDate).toLocaleDateString('tr-TR');
       const message = `Araç ${record.Plate} için muayene tarihine ${daysUntil} gün kaldı (tarih: ${dateStr}). Yoğunluk ve ceza risklerini önlemek için en kısa sürede muayene randevusu alınması gerekmektedir.`;
       
-      if (record.DriverID) {
-          await createNotification(
-            record.DriverID,
-            'INSPECTION_REMINDER',
-            'Muayene Hatırlatması',
-            message,
-            record.InspectionID
-          );
-          if (record.DriverEmail) {
-            const success = await sendEmail(record.DriverEmail, 'Muayene Hatırlatması', message);
-            await logAudit(
-              undefined,
-              'JOB_INSPECTION_REMINDER_EMAIL',
-              'JobEmails',
-              record.InspectionID,
-              {
-                jobType: 'INSPECTION_REMINDER',
-                recipientType: 'DRIVER',
-                recipientEmail: record.DriverEmail,
-                companyId: record.CompanyID,
-                plate: record.Plate,
-                daysUntil,
-                success
-              },
-              'SYSTEM_CRON'
-            );
-          }
-      }
-
+      // Driver emails removed as per user request
+      
       if (record.ManagerID) {
           await createNotification(
             record.ManagerID,
@@ -131,6 +106,7 @@ const checkInspectionReminders = async () => {
           );
           if (record.ManagerEmail) {
             const success = await sendEmail(record.ManagerEmail, 'Muayene Hatırlatması', message);
+            await delay(1000); // Prevent SMTP rate limiting
             await logAudit(
               undefined,
               'JOB_INSPECTION_REMINDER_EMAIL',
@@ -189,6 +165,7 @@ const checkInspectionReminders = async () => {
         for (const admin of admins) {
             await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Haftalık Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined);
             const success = await sendEmail(admin.Email, `${companyName} - Haftalık Muayene Hatırlatmaları`, htmlTable);
+            await delay(1000); // Prevent SMTP rate limiting
             await logAudit(
               undefined,
               'JOB_INSPECTION_REMINDER_EMAIL',
@@ -259,51 +236,7 @@ const checkInspectionOverdue = async () => {
       const dateStr = new Date(record.NextInspectionDate).toLocaleDateString('tr-TR');
       const message = `Araç ${record.Plate} için muayene vize tarihi ${dateStr} itibarıyla geçmiştir. Yasal yükümlülükler ve olası ceza riskleri nedeniyle en kısa sürede muayene randevusu alınması ve işlemlerin tamamlanması gerekmektedir. (Gecikme: ${daysOverdue} gün)`;
 
-      // 1. Manager bildirimi (varsa)
-        if (record.ManagerID) {
-        await createNotification(
-          record.ManagerID,
-          'INSPECTION_OVERDUE_MANAGER',
-          'Muayene Vizesi Geçmiş Araç',
-          message,
-          record.InspectionID
-        );
-
-        if (record.ManagerEmail) {
-          const managerName = record.ManagerName && record.ManagerSurname
-            ? `Sayın ${record.ManagerName} ${record.ManagerSurname},`
-            : 'Sayın Yetkili,';
-
-          const html = `
-            <p>${managerName}</p>
-            <p>${record.Plate} plakalı aracın muayene vize tarihi <strong>${dateStr}</strong> itibarıyla geçmiştir.</p>
-            <p>Yasal yükümlülükler, trafik kontrolleri ve olası ceza riskleri açısından en kısa sürede muayene randevusu alınması ve işlemlerin tamamlanması gerekmektedir.</p>
-            <p>Gecikme süresi: <strong>${daysOverdue} gün</strong>.</p>
-          `;
-
-          const success = await sendEmail(
-            record.ManagerEmail,
-            `Muayene Vizesi Geçmiş Araç: ${record.Plate}`,
-            html
-          );
-          await logAudit(
-            undefined,
-            'JOB_INSPECTION_OVERDUE_EMAIL',
-            'JobEmails',
-            record.InspectionID,
-            {
-              jobType: 'INSPECTION_OVERDUE_MANAGER',
-              recipientType: 'MANAGER',
-              recipientEmail: record.ManagerEmail,
-              companyId: record.CompanyID,
-              plate: record.Plate,
-              daysOverdue,
-              success
-            },
-            'SYSTEM_CRON'
-          );
-        }
-      }
+      // Manager notification removed for overdue inspections as per user request (only Admins)
 
       // 2. Adminler için listeye ekle (manager olsun olmasın)
       if (!adminOverdue[record.CompanyID]) {
@@ -360,6 +293,7 @@ const checkInspectionOverdue = async () => {
           `${companyName} - Vizesi Geçmiş Araçlar - Haftalık Muayene Raporu`,
           htmlTable
         );
+        await delay(1000); // Prevent SMTP rate limiting
         await logAudit(
           undefined,
           'JOB_INSPECTION_OVERDUE_EMAIL',
@@ -497,6 +431,7 @@ const checkInsuranceReminders = async () => {
           undefined
         );
         const success = await sendEmail(admin.Email, subject, htmlContent);
+        await delay(1000); // Prevent SMTP rate limiting
         await logAudit(
           undefined,
           'JOB_INSURANCE_REMINDER_EMAIL',
