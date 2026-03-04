@@ -163,7 +163,7 @@ const JobEmailSettings = () => {
             Otomatik Çalışma Zamanı
           </h3>
           <p className="text-sm text-neutral-600 mb-3">
-            Sistemin otomatik olarak hatırlatma maillerini göndereceği saati belirleyin.
+            Sistemin otomatik olarak hatırlatma maillerini göndereceği saati belirleyin. (Bu ayar Pazar günleri için geçerlidir.)
           </p>
           <div className="flex items-center">
             <input
@@ -179,7 +179,7 @@ const JobEmailSettings = () => {
           <h3 className="text-lg font-medium mb-3">Muayene Hatırlatma Mailleri</h3>
           <p className="text-sm text-neutral-600 mb-3">
             Yaklaşan muayene tarihleri için sürücü, araç yöneticisi ve şirket adminlerine
-            gönderilen otomatik e-posta bildirimlerini yönetir.
+            gönderilen haftalık otomatik e-posta bildirimlerini yönetir.
           </p>
           <label className="flex items-center cursor-pointer">
             <div className="relative">
@@ -210,7 +210,7 @@ const JobEmailSettings = () => {
           <h3 className="text-lg font-medium mb-3">Vizesi Geçmiş Araç Mailleri</h3>
           <p className="text-sm text-neutral-600 mb-3">
             Muayene vize tarihi geçmiş araçlar için araç yöneticisi ve şirket adminlerine
-            gönderilen uyarı e-postalarını yönetir.
+            gönderilen haftalık uyarı e-postalarını yönetir.
           </p>
           <label className="flex items-center cursor-pointer">
             <div className="relative">
@@ -241,7 +241,7 @@ const JobEmailSettings = () => {
           <h3 className="text-lg font-medium mb-3">Sigorta/Kasko Hatırlatma Mailleri</h3>
           <p className="text-sm text-neutral-600 mb-3">
             Yaklaşan sigorta ve kasko bitiş tarihleri için şirket adminlerine gönderilen
-            günlük özet e-postalarını yönetir.
+            haftalık özet e-postalarını yönetir.
           </p>
           <label className="flex items-center cursor-pointer">
             <div className="relative">
