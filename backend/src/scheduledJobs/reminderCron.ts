@@ -456,11 +456,198 @@ const checkInsuranceReminders = async () => {
   }
 };
 
+// 3. Maintenance Reminders (Bakım)
+// Recipients: Vehicle Manager (Araç Yöneticisi)
+// Trigger: Estimated 7 days remaining based on daily average usage
+const checkMaintenanceReminders = async () => {
+  try {
+    console.log('🔍 Checking maintenance reminders...');
+    const pool = await connectDB();
+
+    const query = `
+      WITH AllKm AS (
+          SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords WHERE Kilometer > 0
+          UNION ALL
+          SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates WHERE Kilometer > 0
+          UNION ALL
+          SELECT VehicleID, ServiceDate as Date, Kilometer as Km FROM MaintenanceRecords WHERE Kilometer > 0
+          UNION ALL
+          SELECT VehicleID, DATEFROMPARTS(Year, Month, 1) as Date, Kilometer as Km FROM MonthlyKmLog WHERE Kilometer > 0
+      ),
+      KmStats AS (
+          SELECT 
+              VehicleID,
+              -- Overall Stats
+              MIN(Date) as FirstDate,
+              MAX(Date) as LastDate,
+              MIN(Km) as FirstKm,
+              MAX(Km) as LastKm,
+              -- Recent Stats (Last 90 Days)
+              MIN(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Date END) as RecentFirstDate,
+              MAX(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Date END) as RecentLastDate,
+              MIN(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Km END) as RecentFirstKm,
+              MAX(CASE WHEN Date >= DATEADD(day, -90, GETDATE()) THEN Km END) as RecentLastKm
+          FROM AllKm
+          GROUP BY VehicleID
+      ),
+      LastMaintenance AS (
+          SELECT 
+              VehicleID,
+              MAX(ServiceDate) as LastServiceDate,
+              MAX(Kilometer) as LastServiceKm
+          FROM MaintenanceRecords
+          GROUP BY VehicleID
+      )
+      SELECT 
+          v.VehicleID,
+          v.Plate,
+          v.CurrentKm,
+          v.NextMaintenanceKm,
+          v.Make,
+          v.Model,
+          v.CompanyID,
+          c.Name as CompanyName,
+          v.DepotID,
+          dp.Name as DepotName,
+          v.ManagerID,
+          m.Email as ManagerEmail,
+          m.Name as ManagerName,
+          m.Surname as ManagerSurname,
+          ks.FirstDate,
+          ks.LastDate,
+          ks.FirstKm,
+          ks.LastKm,
+          ks.RecentFirstDate,
+          ks.RecentLastDate,
+          ks.RecentFirstKm,
+          ks.RecentLastKm,
+          DATEDIFF(day, ks.FirstDate, ks.LastDate) as DaysTracked,
+          (ks.LastKm - ks.FirstKm) as KmDiff,
+          DATEDIFF(day, ks.RecentFirstDate, ks.RecentLastDate) as RecentDaysTracked,
+          (ks.RecentLastKm - ks.RecentFirstKm) as RecentKmDiff,
+          lm.LastServiceDate,
+          lm.LastServiceKm
+      FROM Vehicles v
+      LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
+      LEFT JOIN Depots dp ON v.DepotID = dp.DepotID
+      LEFT JOIN Users m ON v.ManagerID = m.UserID
+      LEFT JOIN KmStats ks ON v.VehicleID = ks.VehicleID
+      LEFT JOIN LastMaintenance lm ON v.VehicleID = lm.VehicleID
+      WHERE v.Status = 'Active'
+    `;
+
+    const result = await pool.request().query(query);
+
+    for (const record of result.recordset as any[]) {
+      // Only send if Manager exists
+      if (!record.ManagerID || !record.ManagerEmail) continue;
+
+      let avgDailyKm = 0;
+      
+      // Calculate Overall Average
+      let overallAvg = 0;
+      if (record.DaysTracked > 0 && record.KmDiff > 0) {
+        overallAvg = record.KmDiff / record.DaysTracked;
+      }
+
+      // Calculate Recent Average (Last 90 Days)
+      let recentAvg = 0;
+      if (record.RecentDaysTracked > 7 && record.RecentKmDiff > 0) {
+        recentAvg = record.RecentKmDiff / record.RecentDaysTracked;
+      }
+
+      // Decision Logic
+      if (recentAvg > 0) {
+        avgDailyKm = recentAvg;
+      } else {
+        avgDailyKm = overallAvg;
+      }
+
+      if (avgDailyKm <= 0) continue; // Cannot predict
+
+      // Default maintenance interval: 15,000 KM
+      const MAINTENANCE_INTERVAL = 15000;
+      const lastServiceKm = record.LastServiceKm || 0;
+      const nextServiceKmCalculated = lastServiceKm + MAINTENANCE_INTERVAL;
+      const nextServiceKm = record.NextMaintenanceKm ? record.NextMaintenanceKm : nextServiceKmCalculated;
+      const remainingKm = nextServiceKm - record.CurrentKm;
+      
+      const estDaysRemaining = Math.ceil(remainingKm / avgDailyKm);
+
+      // Check if within 7 days (including overdue up to a point? No, user said "7 days before")
+      // We check 0 <= estDaysRemaining <= 7 to catch them when they are approaching.
+      if (estDaysRemaining >= 0 && estDaysRemaining <= 7) {
+        const today = new Date();
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + estDaysRemaining);
+        const dateStr = targetDate.toLocaleDateString('tr-TR');
+
+        const message = `Araç ${record.Plate} için bakıma tahmini ${estDaysRemaining} gün kaldı. (Mevcut KM: ${record.CurrentKm}, Hedef KM: ${nextServiceKm}, Tahmini Tarih: ${dateStr}). Lütfen bakım randevusu alınız.`;
+        
+        // Notification
+        await createNotification(
+            record.ManagerID,
+            'MAINTENANCE_REMINDER',
+            'Bakım Hatırlatması',
+            message,
+            record.VehicleID // Linking to VehicleID
+        );
+
+        // Email
+        const htmlContent = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h3 style="color: #2c3e50;">Araç Bakım Hatırlatması</h3>
+                <p>Sayın ${record.ManagerName},</p>
+                <p>Yöneticisi olduğunuz <b>${record.Plate}</b> plakalı aracın periyodik bakımı yaklaşmaktadır.</p>
+                <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; border-color: #e0e0e0;">
+                    <tr><td style="background-color: #f9fafb;"><b>Plaka</b></td><td>${record.Plate}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Şirket</b></td><td>${record.CompanyName}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Mevcut KM</b></td><td>${record.CurrentKm}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Hedef Bakım KM</b></td><td>${nextServiceKm}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Kalan KM</b></td><td>${remainingKm}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Günlük Ort. KM</b></td><td>${Math.round(avgDailyKm * 10) / 10}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Tahmini Kalan Gün</b></td><td>${estDaysRemaining}</td></tr>
+                    <tr><td style="background-color: #f9fafb;"><b>Tahmini Bakım Tarihi</b></td><td>${dateStr}</td></tr>
+                </table>
+                <p style="margin-top: 20px;">Lütfen servis randevusu alarak bakım işlemlerini planlayınız.</p>
+                <div style="margin-top: 24px; font-size: 12px; color: #7f8c8d; border-top: 1px solid #eceff1; padding-top: 10px; text-align: center;">
+                    <p>Bu e-posta sistem tarafından otomatik olarak oluşturulmuştur.</p>
+                </div>
+            </div>
+        `;
+
+        const success = await sendEmail(record.ManagerEmail, `Bakım Hatırlatması - ${record.Plate}`, htmlContent);
+        await delay(1000); // Prevent SMTP rate limiting
+
+        await logAudit(
+            undefined,
+            'JOB_MAINTENANCE_REMINDER_EMAIL',
+            'JobEmails',
+            record.VehicleID,
+            {
+                jobType: 'MAINTENANCE_REMINDER',
+                recipientType: 'MANAGER',
+                recipientEmail: record.ManagerEmail,
+                plate: record.Plate,
+                estDaysRemaining,
+                success
+            },
+            'SYSTEM_CRON'
+        );
+      }
+    }
+    console.log('✅ Maintenance reminders checked successfully');
+  } catch (error) {
+    console.error('❌ Error checking maintenance reminders:', error);
+  }
+};
+
 export const runRemindersManually = async () => {
   console.log('🚀 Manually triggering reminder cron job...');
   await checkInspectionReminders();
   await checkInspectionOverdue();
   await checkInsuranceReminders();
+  await checkMaintenanceReminders();
   console.log('✅ Manual reminder job completed.');
 };
 
@@ -495,6 +682,7 @@ export const startReminderCron = async () => {
       await checkInspectionReminders();
       await checkInspectionOverdue();
       await checkInsuranceReminders();
+      await checkMaintenanceReminders();
     });
   } catch (error) {
     console.error('Failed to start reminder cron:', error);
@@ -503,6 +691,7 @@ export const startReminderCron = async () => {
         await checkInspectionReminders();
         await checkInspectionOverdue();
         await checkInsuranceReminders();
+        await checkMaintenanceReminders();
     });
   }
 };
