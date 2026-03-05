@@ -367,7 +367,13 @@ const ServiceRequests = () => {
                         )}
                         {request.Status === 'IN_PROGRESS' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.EDIT) && (
                           <button
-                            onClick={() => setReturnId(request.RequestID)}
+                            onClick={() => {
+                              setReturnId(request.RequestID);
+                              const vehicle = Array.isArray(vehicles) ? vehicles.find(v => v.VehicleID === request.VehicleID) : undefined;
+                              if (vehicle?.NextMaintenanceKm) {
+                                setNextMaintenanceKm(String(vehicle.NextMaintenanceKm));
+                              }
+                            }}
                             className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Servisten Döndü Olarak İşaretle"
                           >
@@ -471,7 +477,13 @@ const ServiceRequests = () => {
                     )}
                     {request.Status === 'IN_PROGRESS' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.EDIT) && (
                       <button
-                        onClick={() => setReturnId(request.RequestID)}
+                        onClick={() => {
+                          setReturnId(request.RequestID);
+                          const vehicle = Array.isArray(vehicles) ? vehicles.find(v => v.VehicleID === request.VehicleID) : undefined;
+                          if (vehicle?.NextMaintenanceKm) {
+                            setNextMaintenanceKm(String(vehicle.NextMaintenanceKm));
+                          }
+                        }}
                         className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
                         title="Servisten Döndü Olarak İşaretle"
                       >
