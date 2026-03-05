@@ -59,19 +59,19 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
     }
 
     if (!isSuperAdmin) {
-      const accessConditions: string[] = [];
-
       if (userDepotIds.length > 0) {
-        accessConditions.push(`v.DepotID IN (${userDepotIds.join(',')})`);
+        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+      } else {
+        const companyConditions: string[] = [];
+        if (userCompanyId) {
+          companyConditions.push(`v.CompanyID = @UserCompanyID`);
+        }
+        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+        
+        if (companyConditions.length > 0) {
+           whereClause += ` AND (${companyConditions.join(' OR ')})`;
+        }
       }
-
-      if (userCompanyId) {
-        accessConditions.push(`v.CompanyID = @UserCompanyID`);
-      }
-
-      accessConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-
-      whereClause += ` AND (${accessConditions.join(' OR ')})`;
       
       // Add optional company filter if provided in query
       if (companyId) {
@@ -185,19 +185,19 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
     }
 
     if (!isSuperAdmin) {
-      const accessConditions: string[] = [];
-
       if (userDepotIds.length > 0) {
-        accessConditions.push(`v.DepotID IN (${userDepotIds.join(',')})`);
+        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+      } else {
+        const companyConditions: string[] = [];
+        if (userCompanyId) {
+          companyConditions.push(`v.CompanyID = @UserCompanyID`);
+        }
+        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+        
+        if (companyConditions.length > 0) {
+           whereClause += ` AND (${companyConditions.join(' OR ')})`;
+        }
       }
-
-      if (userCompanyId) {
-        accessConditions.push(`v.CompanyID = @UserCompanyID`);
-      }
-
-      accessConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-
-      whereClause += ` AND (${accessConditions.join(' OR ')})`;
 
       // Add optional company filter if provided in query
       if (companyId) {
@@ -284,25 +284,25 @@ export const saveMonthlyKm = async (req: AuthRequest, res: Response): Promise<vo
         accessRequest.input('CompanyID', sql.Int, companyId);
       }
 
-      const accessQueryParts: string[] = [];
+      let accessWhere = '';
 
       if (userDepotIds.length > 0) {
-        accessQueryParts.push(`v.DepotID IN (${userDepotIds.join(',')})`);
+        accessWhere = `v.DepotID IN (${userDepotIds.join(',')})`;
+      } else {
+        const companyConditions: string[] = [];
+        if (companyId) {
+          companyConditions.push(`v.CompanyID = @CompanyID`);
+        }
+        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+        
+        accessWhere = companyConditions.length > 0 ? `(${companyConditions.join(' OR ')})` : '1=0';
       }
-      
-      if (companyId) {
-        accessQueryParts.push(`v.CompanyID = @CompanyID`);
-      }
-      
-      accessQueryParts.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-
-      const accessWhere = accessQueryParts.length > 0 ? accessQueryParts.join(' OR ') : '1=1';
 
       const accessCheck = await accessRequest.query(`
         SELECT COUNT(*) as count 
         FROM Vehicles v
         WHERE VehicleID IN (${vehicleIds.join(',')})
-        AND (${accessWhere})
+        AND ${accessWhere}
       `);
 
       if (accessCheck.recordset[0].count !== vehicleIds.length) {
@@ -385,6 +385,31 @@ export const getVehicleKmHistory = async (req: AuthRequest, res: Response): Prom
     const { vehicleId } = req.params;
     const pool = await connectDB();
 
+    // Check user depots
+    let userDepotIds: number[] = [];
+    if (req.user?.UserID && req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
+      const depotResult = await pool.request()
+        .input('UserID', sql.Int, req.user.UserID)
+        .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
+      userDepotIds = depotResult.recordset.map((r: any) => r.DepotID);
+    }
+
+    let accessWhere = '';
+    if (req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin') {
+        accessWhere = '1=1';
+    } else {
+        if (userDepotIds.length > 0) {
+            accessWhere = `v.DepotID IN (${userDepotIds.join(',')})`;
+        } else {
+            const companyConditions: string[] = [];
+            if (req.user?.CompanyID) {
+                companyConditions.push(`v.CompanyID = @CompanyID`);
+            }
+            companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+            accessWhere = companyConditions.length > 0 ? `(${companyConditions.join(' OR ')})` : '1=0';
+        }
+    }
+
     // Permission check
     const accessCheck = await pool.request()
       .input('VehicleID', sql.Int, vehicleId)
@@ -393,9 +418,7 @@ export const getVehicleKmHistory = async (req: AuthRequest, res: Response): Prom
       .query(`
         SELECT CompanyID FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${accessWhere}
       `);
 
     if (accessCheck.recordset.length === 0) {
@@ -439,6 +462,24 @@ export const importMonthlyKm = async (req: AuthRequest, res: Response): Promise<
     const data = XLSX.utils.sheet_to_json(sheet);
 
     const pool = await connectDB();
+
+    // Fetch User Permissions (Depots & Companies)
+    let userDepotIds: number[] = [];
+    let userCompanyIds: number[] = [];
+    
+    if (req.user?.UserID && req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
+        const depotResult = await pool.request()
+            .input('UserID', sql.Int, req.user.UserID)
+            .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
+        userDepotIds = depotResult.recordset.map((r: any) => r.DepotID);
+        
+        const companyResult = await pool.request()
+            .input('UserID', sql.Int, req.user.UserID)
+            .query('SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID');
+        userCompanyIds = companyResult.recordset.map((r: any) => r.CompanyID);
+        if (req.user.CompanyID) userCompanyIds.push(req.user.CompanyID);
+    }
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -476,7 +517,7 @@ export const importMonthlyKm = async (req: AuthRequest, res: Response): Promise<
         // Get VehicleID
         const vehicleResult = await transaction.request()
           .input('Plate', sql.NVarChar, plate)
-          .query('SELECT VehicleID, CurrentKm, CompanyID FROM Vehicles WHERE Plate = @Plate');
+          .query('SELECT VehicleID, CurrentKm, CompanyID, DepotID FROM Vehicles WHERE Plate = @Plate');
 
         if (vehicleResult.recordset.length === 0) {
           errors.push(`Vehicle not found: ${plate}`);
@@ -486,9 +527,25 @@ export const importMonthlyKm = async (req: AuthRequest, res: Response): Promise<
         const vehicle = vehicleResult.recordset[0];
 
         // Permission check
-        if (req.user?.Role !== 'SuperAdmin' && req.user?.CompanyID && vehicle.CompanyID !== req.user.CompanyID) {
-           errors.push(`Permission denied for vehicle: ${plate}`);
-           continue;
+        if (req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
+            let hasAccess = false;
+            
+            if (userDepotIds.length > 0) {
+                // User has Depot Restrictions
+                if (vehicle.DepotID && userDepotIds.includes(vehicle.DepotID)) {
+                    hasAccess = true;
+                }
+            } else {
+                // User has Company Access (No specific Depot restrictions)
+                if (userCompanyIds.includes(vehicle.CompanyID)) {
+                    hasAccess = true;
+                }
+            }
+            
+            if (!hasAccess) {
+                errors.push(`Permission denied for vehicle: ${plate}`);
+                continue;
+            }
         }
 
         // Update MonthlyKmLog (Upsert)
