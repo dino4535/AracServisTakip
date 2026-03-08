@@ -373,6 +373,13 @@ const ServiceRequests = () => {
                               if (vehicle?.NextMaintenanceKm) {
                                 setNextMaintenanceKm(String(vehicle.NextMaintenanceKm));
                               }
+                              // Extract KM from Description tag [Mevcut KM: 12345]
+                              const kmMatch = request.Description?.match(/\[Mevcut KM:\s*(\d+)\]/);
+                              if (kmMatch && kmMatch[1]) {
+                                setCurrentKm(kmMatch[1]);
+                              } else if (vehicle?.CurrentKm) {
+                                setCurrentKm(String(vehicle.CurrentKm));
+                              }
                             }}
                             className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Servisten Döndü Olarak İşaretle"
@@ -482,6 +489,13 @@ const ServiceRequests = () => {
                           const vehicle = Array.isArray(vehicles) ? vehicles.find(v => v.VehicleID === request.VehicleID) : undefined;
                           if (vehicle?.NextMaintenanceKm) {
                             setNextMaintenanceKm(String(vehicle.NextMaintenanceKm));
+                          }
+                          // Extract KM from Description tag [Mevcut KM: 12345]
+                          const kmMatch = request.Description?.match(/\[Mevcut KM:\s*(\d+)\]/);
+                          if (kmMatch && kmMatch[1]) {
+                            setCurrentKm(kmMatch[1]);
+                          } else if (vehicle?.CurrentKm) {
+                            setCurrentKm(String(vehicle.CurrentKm));
                           }
                         }}
                         className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
