@@ -213,11 +213,24 @@ export const createInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       return;
     }
 
+    const parsedVehicleId = Number(vehicleId);
+    if (!Number.isInteger(parsedVehicleId) || parsedVehicleId <= 0) {
+      res.status(400).json({ error: 'Invalid vehicleId' });
+      return;
+    }
+
+    const parsedStartDate = startDate instanceof Date ? startDate : new Date(startDate);
+    const parsedEndDate = endDate instanceof Date ? endDate : new Date(endDate);
+    if (isNaN(parsedStartDate.getTime()) || isNaN(parsedEndDate.getTime())) {
+      res.status(400).json({ error: 'Invalid startDate or endDate' });
+      return;
+    }
+
     const pool = await connectDB();
 
     // Check access
     const check = await pool.request()
-      .input('VehicleID', sql.Int, vehicleId)
+      .input('VehicleID', sql.Int, parsedVehicleId)
       .input('CompanyID', sql.Int, req.user?.CompanyID || null)
       .input('UserID', sql.Int, req.user?.UserID)
       .input('Role', sql.NVarChar(50), req.user?.Role)
@@ -246,12 +259,12 @@ export const createInsuranceRecord = async (req: AuthRequest, res: Response): Pr
 
     const result = await pool
       .request()
-      .input('VehicleID', sql.Int, vehicleId)
+      .input('VehicleID', sql.Int, parsedVehicleId)
       .input('Type', sql.NVarChar(30), type)
       .input('PolicyNumber', sql.NVarChar(50), policyNumber || null)
       .input('InsuranceCompany', sql.NVarChar(100), insuranceCompany || null)
-      .input('StartDate', sql.DateTime2, startDate)
-      .input('EndDate', sql.DateTime2, endDate)
+      .input('StartDate', sql.DateTime2, parsedStartDate)
+      .input('EndDate', sql.DateTime2, parsedEndDate)
       .input('Cost', sql.Decimal(10, 2), parsedCost)
       .input('Notes', sql.NVarChar(500), notes || null)
       .query(`
@@ -289,6 +302,13 @@ export const updateInsuranceRecord = async (req: AuthRequest, res: Response): Pr
 
     const pool = await connectDB();
 
+    const parsedStartDate = startDate instanceof Date ? startDate : (startDate ? new Date(startDate) : null);
+    const parsedEndDate = endDate instanceof Date ? endDate : (endDate ? new Date(endDate) : null);
+    if ((parsedStartDate && isNaN(parsedStartDate.getTime())) || (parsedEndDate && isNaN(parsedEndDate.getTime()))) {
+      res.status(400).json({ error: 'Invalid startDate or endDate' });
+      return;
+    }
+
     // Check access
     const check = await pool.request()
       .input('InsuranceID', sql.Int, Number(id))
@@ -325,8 +345,8 @@ export const updateInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       .input('Type', sql.NVarChar(30), type)
       .input('PolicyNumber', sql.NVarChar(50), policyNumber || null)
       .input('InsuranceCompany', sql.NVarChar(100), insuranceCompany || null)
-      .input('StartDate', sql.DateTime2, startDate)
-      .input('EndDate', sql.DateTime2, endDate)
+      .input('StartDate', sql.DateTime2, parsedStartDate)
+      .input('EndDate', sql.DateTime2, parsedEndDate)
       .input('Cost', sql.Decimal(10, 2), parsedCost)
       .input('Notes', sql.NVarChar(500), notes || null)
       .query(`
