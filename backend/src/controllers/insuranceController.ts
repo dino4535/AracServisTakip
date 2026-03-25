@@ -235,6 +235,15 @@ export const createInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       return;
     }
 
+    let parsedCost: number | null = null;
+    if (typeof cost === 'number' && isFinite(cost)) {
+      parsedCost = cost;
+    } else if (typeof cost === 'string') {
+      const normalized = cost.replace(/\s+/g, '').replace(/\./g, '').replace(',', '.');
+      const num = parseFloat(normalized);
+      parsedCost = isFinite(num) ? num : null;
+    }
+
     const result = await pool
       .request()
       .input('VehicleID', sql.Int, vehicleId)
@@ -243,7 +252,7 @@ export const createInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       .input('InsuranceCompany', sql.NVarChar(100), insuranceCompany || null)
       .input('StartDate', sql.DateTime2, startDate)
       .input('EndDate', sql.DateTime2, endDate)
-      .input('Cost', sql.Decimal(10, 2), cost || null)
+      .input('Cost', sql.Decimal(10, 2), parsedCost)
       .input('Notes', sql.NVarChar(500), notes || null)
       .query(`
         INSERT INTO InsuranceRecords (VehicleID, Type, PolicyNumber, InsuranceCompany, StartDate, EndDate, Cost, Notes)
@@ -301,6 +310,15 @@ export const updateInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       return;
     }
 
+    let parsedCost: number | null = null;
+    if (typeof cost === 'number' && isFinite(cost)) {
+      parsedCost = cost;
+    } else if (typeof cost === 'string') {
+      const normalized = cost.replace(/\s+/g, '').replace(/\./g, '').replace(',', '.');
+      const num = parseFloat(normalized);
+      parsedCost = isFinite(num) ? num : null;
+    }
+
     const result = await pool
       .request()
       .input('InsuranceID', sql.Int, Number(id))
@@ -309,7 +327,7 @@ export const updateInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       .input('InsuranceCompany', sql.NVarChar(100), insuranceCompany || null)
       .input('StartDate', sql.DateTime2, startDate)
       .input('EndDate', sql.DateTime2, endDate)
-      .input('Cost', sql.Decimal(10, 2), cost || null)
+      .input('Cost', sql.Decimal(10, 2), parsedCost)
       .input('Notes', sql.NVarChar(500), notes || null)
       .query(`
         UPDATE InsuranceRecords
