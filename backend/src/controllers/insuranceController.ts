@@ -4,6 +4,67 @@ import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../services/auditService';
 
+const parseDecimal10_2 = (value: unknown): number | null => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') {
+    if (!isFinite(value)) return null;
+    const rounded = Math.round(value * 100) / 100;
+    if (rounded < 0 || Math.abs(rounded) > 99999999.99) return null;
+    return rounded;
+  }
+  if (typeof value !== 'string') return null;
+
+  let s = value.trim();
+  if (s === '') return null;
+
+  s = s.replace(/\s+/g, '');
+  s = s.replace(/[₺]/g, '');
+  s = s.replace(/[a-zA-Z]/g, '');
+
+  const hasComma = s.includes(',');
+  const hasDot = s.includes('.');
+
+  if (hasComma && hasDot) {
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, '');
+      s = s.replace(/,/g, '.');
+    } else {
+      s = s.replace(/,/g, '');
+      const dotCount = (s.match(/\./g) || []).length;
+      if (dotCount > 1) {
+        const parts = s.split('.');
+        const last = parts.pop();
+        s = `${parts.join('')}.${last}`;
+      }
+    }
+  } else if (hasComma) {
+    const commaCount = (s.match(/,/g) || []).length;
+    if (commaCount > 1) {
+      const parts = s.split(',');
+      const last = parts.pop();
+      s = `${parts.join('')},${last}`;
+    }
+    s = s.replace(/,/g, '.');
+  } else if (hasDot) {
+    const dotCount = (s.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      const parts = s.split('.');
+      const last = parts.pop();
+      s = `${parts.join('')}.${last}`;
+    }
+  }
+
+  s = s.replace(/[^0-9.-]/g, '');
+  const num = parseFloat(s);
+  if (!isFinite(num)) return null;
+
+  const rounded = Math.round(num * 100) / 100;
+  if (rounded < 0 || Math.abs(rounded) > 99999999.99) return null;
+  return rounded;
+};
+
 export const getAllInsuranceRecords = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { vehicleId, type, page = 1, limit = 50, sortField, sortDirection, search } = req.query;
@@ -248,13 +309,16 @@ export const createInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       return;
     }
 
-    let parsedCost: number | null = null;
-    if (typeof cost === 'number' && isFinite(cost)) {
-      parsedCost = cost;
-    } else if (typeof cost === 'string') {
-      const normalized = cost.replace(/\s+/g, '').replace(/\./g, '').replace(',', '.');
-      const num = parseFloat(normalized);
-      parsedCost = isFinite(num) ? num : null;
+    const parsedCost = parseDecimal10_2(cost);
+    const costProvided = !(
+      cost === undefined ||
+      cost === null ||
+      cost === '' ||
+      (typeof cost === 'number' && !isFinite(cost))
+    );
+    if (costProvided && parsedCost === null) {
+      res.status(400).json({ error: 'Invalid cost' });
+      return;
     }
 
     const result = await pool
@@ -330,13 +394,16 @@ export const updateInsuranceRecord = async (req: AuthRequest, res: Response): Pr
       return;
     }
 
-    let parsedCost: number | null = null;
-    if (typeof cost === 'number' && isFinite(cost)) {
-      parsedCost = cost;
-    } else if (typeof cost === 'string') {
-      const normalized = cost.replace(/\s+/g, '').replace(/\./g, '').replace(',', '.');
-      const num = parseFloat(normalized);
-      parsedCost = isFinite(num) ? num : null;
+    const parsedCost = parseDecimal10_2(cost);
+    const costProvided = !(
+      cost === undefined ||
+      cost === null ||
+      cost === '' ||
+      (typeof cost === 'number' && !isFinite(cost))
+    );
+    if (costProvided && parsedCost === null) {
+      res.status(400).json({ error: 'Invalid cost' });
+      return;
     }
 
     const result = await pool
