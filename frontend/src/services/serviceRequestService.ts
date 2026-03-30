@@ -71,8 +71,13 @@ export const serviceRequestService = {
     return response.data.serviceRequest;
   },
 
-  approveServiceRequest: async (id: number, data: { assignedTo?: number; estimatedCost?: number }): Promise<ServiceRequest> => {
+  approveServiceRequest: async (id: number, data: { assignedTo?: number; estimatedCost?: number; note?: string }): Promise<ServiceRequest> => {
     const response = await api.post<{ serviceRequest: ServiceRequest }>(`/service-requests/${id}/approve`, data);
+    return response.data.serviceRequest;
+  },
+
+  rejectServiceRequest: async (id: number, data: { note?: string }): Promise<ServiceRequest> => {
+    const response = await api.post<{ serviceRequest: ServiceRequest }>(`/service-requests/${id}/reject`, data);
     return response.data.serviceRequest;
   },
 

@@ -595,6 +595,7 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
     }
 
     const { assignedTo, estimatedCost } = validation.data;
+    const note: string | undefined = (req.body as any)?.note;
 
     const pool = await connectDB();
 
@@ -647,9 +648,40 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
       'APPROVE_SERVICE_REQUEST',
       'ServiceRequests',
       serviceRequest.RequestID,
-      { status: 'IN_PROGRESS', assignedTo, estimatedCost },
+      { status: 'IN_PROGRESS', assignedTo, estimatedCost, note: note || null },
       req.ip || '0.0.0.0'
     );
+
+    // Persist note if provided
+    if (note && note.trim().length > 0) {
+      await pool.request().query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM sys.objects 
+          WHERE object_id = OBJECT_ID(N'[dbo].[ServiceRequestNotes]') AND type in (N'U')
+        )
+        BEGIN
+          CREATE TABLE ServiceRequestNotes (
+            NoteID INT IDENTITY(1,1) PRIMARY KEY,
+            RequestID INT NOT NULL,
+            UserID INT NULL,
+            Action NVARCHAR(20) NOT NULL,
+            Note NVARCHAR(500) NULL,
+            CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+          );
+        END
+      `);
+
+      await pool.request()
+        .input('RequestID', sql.Int, serviceRequest.RequestID)
+        .input('UserID', sql.Int, req.user?.UserID || null)
+        .input('Action', sql.NVarChar(20), 'APPROVE')
+        .input('Note', sql.NVarChar(500), note)
+        .input('CreatedAt', sql.DateTime2, getTurkeyNow())
+        .query(`
+          INSERT INTO ServiceRequestNotes (RequestID, UserID, Action, Note, CreatedAt)
+          VALUES (@RequestID, @UserID, @Action, @Note, @CreatedAt)
+        `);
+    }
 
     await createNotification(
       serviceRequest.RequestedBy,
@@ -692,6 +724,13 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
         ? new Date(details.RequestDate).toLocaleString('tr-TR')
         : '';
 
+      const noteBlock = (note && note.trim().length > 0)
+        ? `<tr>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Yönetici Notu</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${note.trim()}</td>
+           </tr>`
+        : '';
+
       const emailContent = `
         <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
           <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">Servis Talebiniz Onaylandı</h2>
@@ -731,6 +770,7 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
               <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Açıklama</td>
               <td style="padding: 10px; border: 1px solid #ddd;">${details.Description}</td>
             </tr>
+            ${noteBlock}
           </table>
           
           <p>Talebin son durumunu ve detaylarını görüntülemek için lütfen Araç Servis Takip Portalı&apos;na giriş yapınız.</p>
@@ -785,6 +825,231 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
     });
   } catch (error) {
     console.error('Approve service request error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const rejectServiceRequest = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const note: string | undefined = (req.body as any)?.note;
+    const pool = await connectDB();
+
+    if (!note || note.trim().length === 0) {
+      res.status(400).json({ error: 'Rejection note is required' });
+      return;
+    }
+
+    const checkQuery = await pool.request()
+      .input('RequestID', sql.Int, Number(id))
+      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('UserID', sql.Int, req.user?.UserID)
+      .input('Role', sql.NVarChar(50), req.user?.Role)
+      .query(`
+        SELECT sr.RequestID, sr.RequestedBy
+        FROM ServiceRequests sr
+        JOIN Vehicles v ON sr.VehicleID = v.VehicleID
+        WHERE sr.RequestID = @RequestID
+        AND (@Role = 'SuperAdmin' OR @Role = 'Super Admin' OR @CompanyID IS NULL 
+          OR v.CompanyID = @CompanyID 
+          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+      `);
+
+    if (checkQuery.recordset.length === 0) {
+      res.status(403).json({ error: 'You do not have permission for this service request' });
+      return;
+    }
+
+    const result = await pool
+      .request()
+      .input('RequestID', sql.Int, Number(id))
+      .input('Status', sql.NVarChar(20), 'REJECTED')
+      .query(`
+        UPDATE ServiceRequests
+        SET Status = @Status
+        OUTPUT inserted.*
+        WHERE RequestID = @RequestID
+      `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ error: 'Service request not found' });
+      return;
+    }
+
+    const serviceRequest = result.recordset[0];
+
+    await logAudit(
+      req.user?.UserID,
+      'REJECT_SERVICE_REQUEST',
+      'ServiceRequests',
+      serviceRequest.RequestID,
+      { status: 'REJECTED', note: note || null },
+      req.ip || '0.0.0.0'
+    );
+
+    if (note && note.trim().length > 0) {
+      await pool.request().query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM sys.objects 
+          WHERE object_id = OBJECT_ID(N'[dbo].[ServiceRequestNotes]') AND type in (N'U')
+        )
+        BEGIN
+          CREATE TABLE ServiceRequestNotes (
+            NoteID INT IDENTITY(1,1) PRIMARY KEY,
+            RequestID INT NOT NULL,
+            UserID INT NULL,
+            Action NVARCHAR(20) NOT NULL,
+            Note NVARCHAR(500) NULL,
+            CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+          );
+        END
+      `);
+
+      await pool.request()
+        .input('RequestID', sql.Int, serviceRequest.RequestID)
+        .input('UserID', sql.Int, req.user?.UserID || null)
+        .input('Action', sql.NVarChar(20), 'REJECT')
+        .input('Note', sql.NVarChar(500), note)
+        .input('CreatedAt', sql.DateTime2, getTurkeyNow())
+        .query(`
+          INSERT INTO ServiceRequestNotes (RequestID, UserID, Action, Note, CreatedAt)
+          VALUES (@RequestID, @UserID, @Action, @Note, @CreatedAt)
+        `);
+    }
+
+    await createNotification(
+      serviceRequest.RequestedBy,
+      'SERVICE_REQUEST_REJECTED',
+      'Servis Talebi Reddedildi',
+      'Servis talebiniz yönetici tarafından reddedildi.',
+      serviceRequest.RequestID
+    );
+
+    const userResult = await pool.request()
+      .input('UserID', sql.Int, serviceRequest.RequestedBy)
+      .query('SELECT Email, Name, Surname, ManagerID FROM Users WHERE UserID = @UserID');
+    const user = userResult.recordset[0];
+
+    const detailsResult = await pool.request()
+      .input('RequestID', sql.Int, serviceRequest.RequestID)
+      .query(`
+        SELECT 
+          sr.RequestID,
+          sr.Description,
+          sr.ServiceType,
+          sr.Priority,
+          sr.RequestDate,
+          v.Plate,
+          c.Name as CompanyName,
+          d.Name as DepotName
+        FROM ServiceRequests sr
+        JOIN Vehicles v ON sr.VehicleID = v.VehicleID
+        LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
+        LEFT JOIN Depots d ON v.DepotID = d.DepotID
+        WHERE sr.RequestID = @RequestID
+      `);
+    const details = detailsResult.recordset[0];
+
+    if (user?.Email && details) {
+      const requestDateStr = details.RequestDate 
+        ? new Date(details.RequestDate).toLocaleString('tr-TR')
+        : '';
+      const noteBlock = (note && note.trim().length > 0)
+        ? `<tr>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Yönetici Notu</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${note.trim()}</td>
+           </tr>`
+        : '';
+      const emailContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
+          <h2 style="color: #c0392b; border-bottom: 2px solid #e74c3c; padding-bottom: 10px;">Servis Talebiniz Reddedildi</h2>
+          <p>Sayın ${user.Name} ${user.Surname},</p>
+          <p>Aşağıda detayları yer alan servis talebiniz yönetici tarafından reddedilmiştir.</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px;">
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; width: 30%;">Şirket</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.CompanyName || 'Belirtilmedi'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Depo</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.DepotName || 'Belirtilmedi'}</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Plaka</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.Plate}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Talep No</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.RequestID}</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Talep Tarihi</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${requestDateStr}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Talep Tipi</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.ServiceType || 'Belirtilmedi'}</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Öncelik</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.Priority}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Açıklama</td>
+              <td style="padding: 10px; border: 1px solid #ddd;">${details.Description}</td>
+            </tr>
+            ${noteBlock}
+          </table>
+          
+          <div style="margin-top: 24px; font-size: 12px; color: #7f8c8d;">
+            <p>Bu e-posta, Araç Servis Takip Portalı tarafından otomatik olarak oluşturulmuştur. Lütfen bu mesaja yanıt vermeyiniz.</p>
+            <p style="margin-top: 8px;">
+              Saygılarımızla,<br/>
+              Dino Gıda San. Tic. Ltd. Şti.<br/>
+              Araç Servis Takip Portalı
+            </p>
+            <p style="margin-top: 8px;">Powered by Oğuz EMÜL</p>
+          </div>
+        </div>
+      `;
+
+      await sendEmail(
+        user.Email,
+        'Servis Talebiniz Reddedildi',
+        emailContent
+      );
+    }
+
+    if (user?.ManagerID) {
+      const managerResult = await pool.request()
+        .input('ManagerID', sql.Int, user.ManagerID)
+        .query('SELECT Email, Name, Surname FROM Users WHERE UserID = @ManagerID');
+      const manager = managerResult.recordset[0];
+      if (manager?.Email) {
+        await createNotification(
+          user.ManagerID,
+          'SERVICE_REQUEST_REJECTED_MANAGER',
+          'Personel Servis Talebi Reddedildi',
+          `${user.Name} ${user.Surname} tarafından açılan servis talebi reddedildi.`,
+          serviceRequest.RequestID
+        );
+        await sendEmail(
+          manager.Email,
+          'Personel Servis Talebi Reddedildi',
+          `<p>Sayın ${manager.Name} ${manager.Surname},</p>
+           <p>Sorumluluğunuzdaki ${user.Name} ${user.Surname} adlı personelin servis talebi yönetici tarafından reddedilmiştir.</p>
+           ${note ? `<p><strong>Yönetici Notu:</strong> ${note}</p>` : ''}`
+        );
+      }
+    }
+
+    res.json({
+      message: 'Service request rejected successfully',
+      serviceRequest,
+    });
+  } catch (error) {
+    console.error('Reject service request error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -7,7 +7,8 @@ import {
   approveServiceRequest,
   completeServiceRequest,
   deleteServiceRequest,
-  markReturnedFromService
+  markReturnedFromService,
+  rejectServiceRequest
 } from '../controllers/serviceRequestController';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
@@ -104,6 +105,7 @@ router.post('/', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.ADD), crea
 
 router.put('/:id', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.EDIT), updateServiceRequest);
 router.post('/:id/approve', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.APPROVE), approveServiceRequest);
+router.post('/:id/reject', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.APPROVE), rejectServiceRequest);
 router.post('/:id/return', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.EDIT), markReturnedFromService);
 router.post('/:id/complete', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.EDIT), completeServiceRequest);
 router.delete('/:id', authenticate, authorize(PERMISSIONS.SERVICE_REQUESTS.DELETE), deleteServiceRequest);

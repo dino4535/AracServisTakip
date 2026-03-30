@@ -6,7 +6,7 @@ import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import ConfirmationModal from '../components/common/ConfirmationModal';
 import Pagination from '../components/common/Pagination';
-import { ClipboardList, Plus, Edit, Trash2, CheckCircle, PlayCircle, Car as CarIcon } from 'lucide-react';
+import { ClipboardList, Plus, Edit, Trash2, CheckCircle, XCircle, PlayCircle, Car as CarIcon } from 'lucide-react';
 import { serviceRequestService } from '../services/serviceRequestService';
 import { vehicleService } from '../services/vehicleService';
 import { adminService } from '../services/adminService';
@@ -33,6 +33,9 @@ const ServiceRequests = () => {
   // Modal states
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [approveId, setApproveId] = useState<number | null>(null);
+  const [approveNote, setApproveNote] = useState<string>('');
+  const [rejectId, setRejectId] = useState<number | null>(null);
+  const [rejectNote, setRejectNote] = useState<string>('');
   const [completeId, setCompleteId] = useState<number | null>(null);
   const [returnId, setReturnId] = useState<number | null>(null);
   const [nextMaintenanceKm, setNextMaintenanceKm] = useState<string>('');
@@ -119,10 +122,22 @@ const ServiceRequests = () => {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: number) => serviceRequestService.approveServiceRequest(id, {}),
+    mutationFn: (payload: { id: number; note?: string }) => 
+      serviceRequestService.approveServiceRequest(payload.id, { note: payload.note }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['serviceRequests'] });
       setApproveId(null);
+      setApproveNote('');
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (payload: { id: number; note?: string }) =>
+      serviceRequestService.rejectServiceRequest(payload.id, { note: payload.note }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serviceRequests'] });
+      setRejectId(null);
+      setRejectNote('');
     },
   });
 
@@ -357,13 +372,22 @@ const ServiceRequests = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
                         {request.Status === 'PENDING' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.APPROVE) && (
-                          <button
-                            onClick={() => setApproveId(request.RequestID)}
-                            className="p-1.5 hover:bg-success-50 rounded-lg transition-colors"
-                            title="Onayla"
-                          >
-                            <CheckCircle className="w-4 h-4 text-success-600" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => setApproveId(request.RequestID)}
+                              className="p-1.5 hover:bg-success-50 rounded-lg transition-colors"
+                              title="Onayla"
+                            >
+                              <CheckCircle className="w-4 h-4 text-success-600" />
+                            </button>
+                            <button
+                              onClick={() => setRejectId(request.RequestID)}
+                              className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Reddet"
+                            >
+                              <XCircle className="w-4 h-4 text-red-600" />
+                            </button>
+                          </>
                         )}
                         {request.Status === 'IN_PROGRESS' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.EDIT) && (
                           <button
@@ -474,13 +498,22 @@ const ServiceRequests = () => {
                 <div className="flex items-center justify-end pt-2 border-t border-neutral-100 mt-2">
                   <div className="flex items-center space-x-2">
                     {request.Status === 'PENDING' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.APPROVE) && (
-                      <button
-                        onClick={() => setApproveId(request.RequestID)}
-                        className="p-1.5 hover:bg-success-50 rounded-lg transition-colors"
-                        title="Onayla"
-                      >
-                        <CheckCircle className="w-4 h-4 text-success-600" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setApproveId(request.RequestID)}
+                          className="p-1.5 hover:bg-success-50 rounded-lg transition-colors"
+                          title="Onayla"
+                        >
+                          <CheckCircle className="w-4 h-4 text-success-600" />
+                        </button>
+                        <button
+                          onClick={() => setRejectId(request.RequestID)}
+                          className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Reddet"
+                        >
+                          <XCircle className="w-4 h-4 text-red-600" />
+                        </button>
+                      </>
                     )}
                     {request.Status === 'IN_PROGRESS' && hasPermission(PERMISSIONS.SERVICE_REQUESTS.EDIT) && (
                       <button
@@ -755,15 +788,84 @@ const ServiceRequests = () => {
         confirmText="Sil"
       />
 
-      <ConfirmationModal
+      <Modal
         isOpen={!!approveId}
-        onClose={() => setApproveId(null)}
-        onConfirm={() => approveId && approveMutation.mutate(approveId)}
+        onClose={() => { setApproveId(null); setApproveNote(''); }}
         title="Servis Talebini Onayla"
-        message="Bu servis talebini onaylamak istiyor musunuz?"
-        type="success"
-        confirmText="Onayla"
-      />
+        size="md"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!approveId) return;
+            approveMutation.mutate({ id: approveId, note: approveNote || undefined });
+          }}
+          className="space-y-4"
+        >
+          <p className="text-sm text-neutral-700">
+            Bu talebi onaylarken kullanıcıya iletilecek bir açıklama notu ekleyebilirsiniz.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">Açıklama (Opsiyonel)</label>
+            <textarea
+              value={approveNote}
+              onChange={(e) => setApproveNote(e.target.value)}
+              className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              rows={4}
+              placeholder="Onay notu..."
+              maxLength={500}
+            />
+          </div>
+          <div className="flex justify-end space-x-3 pt-4">
+            <Button type="button" variant="secondary" onClick={() => { setApproveId(null); setApproveNote(''); }}>
+              İptal
+            </Button>
+            <Button type="submit" variant="primary">
+              Onayla
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={!!rejectId}
+        onClose={() => { setRejectId(null); setRejectNote(''); }}
+        title="Servis Talebini Reddet"
+        size="md"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!rejectId) return;
+            rejectMutation.mutate({ id: rejectId, note: rejectNote || undefined });
+          }}
+          className="space-y-4"
+        >
+          <p className="text-sm text-neutral-700">
+            Red gerekçesini yazınız. Bu açıklama talebi açan kullanıcıya e-posta ile iletilecektir.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">Açıklama (Zorunlu)</label>
+            <textarea
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              rows={4}
+              placeholder="Red gerekçeniz..."
+              maxLength={500}
+              required
+            />
+          </div>
+          <div className="flex justify-end space-x-3 pt-4">
+            <Button type="button" variant="secondary" onClick={() => { setRejectId(null); setRejectNote(''); }}>
+              İptal
+            </Button>
+            <Button type="submit" variant="danger">
+              Reddet
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         isOpen={!!returnId}
