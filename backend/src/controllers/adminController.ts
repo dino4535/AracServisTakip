@@ -788,22 +788,32 @@ export const getAllServiceCompanies = async (req: AuthRequest, res: Response): P
   try {
     const { page = 1, limit = 50 } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
-    const limitNum = Math.max(1, parseInt(limit as string));
-    const offset = (pageNum - 1) * limitNum;
+    const parsedLimit = parseInt(limit as string);
+    const limitNum = Number.isFinite(parsedLimit) ? parsedLimit : 50;
+    const isFetchAll = limitNum === 0;
+    const safeLimitNum = isFetchAll ? 50 : Math.max(1, limitNum);
+    const offset = (pageNum - 1) * safeLimitNum;
 
     const pool = await connectDB();
 
     const countQuery = 'SELECT COUNT(*) as total FROM ServiceCompanies';
     
-    const dataQuery = `
-      SELECT * FROM ServiceCompanies 
-      ORDER BY Name
-      OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
-    `;
+    const dataQuery = isFetchAll
+      ? `
+        SELECT * FROM ServiceCompanies
+        ORDER BY Name
+      `
+      : `
+        SELECT * FROM ServiceCompanies 
+        ORDER BY Name
+        OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+      `;
 
     const request = pool.request();
-    request.input('Offset', sql.Int, offset);
-    request.input('Limit', sql.Int, limitNum);
+    if (!isFetchAll) {
+      request.input('Offset', sql.Int, offset);
+      request.input('Limit', sql.Int, safeLimitNum);
+    }
 
     const result = await request.query(`${countQuery}; ${dataQuery}`);
     
@@ -814,9 +824,9 @@ export const getAllServiceCompanies = async (req: AuthRequest, res: Response): P
       serviceCompanies,
       pagination: {
         total,
-        page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
+        page: isFetchAll ? 1 : pageNum,
+        limit: isFetchAll ? total : safeLimitNum,
+        totalPages: isFetchAll ? 1 : Math.ceil(total / safeLimitNum)
       }
     });
   } catch (error) {

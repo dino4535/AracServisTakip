@@ -92,7 +92,7 @@ const ServiceRequests = () => {
 
   const { data: serviceCompanies = [] } = useQuery<ServiceCompany[]>({
     queryKey: ['serviceCompanies'],
-    queryFn: async () => (await adminService.getAllServiceCompanies()).data,
+    queryFn: async () => (await adminService.getAllServiceCompanies({ page: 1, limit: 0 })).data,
   });
 
   // Mutations
