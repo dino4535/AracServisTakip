@@ -8,6 +8,7 @@ import { insuranceSchema } from '../schemas/insuranceSchema';
 import { fuelSchema } from '../schemas/fuelSchema';
 import { hashPassword } from '../utils/password';
 import { logAudit } from '../services/auditService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const downloadTemplate = async (req: AuthRequest, res: Response) => {
   try {
@@ -66,7 +67,8 @@ export const exportData = async (req: AuthRequest, res: Response) => {
     const wb = XLSX.utils.book_new();
     let filename = '';
     let data: any[] = [];
-    const companyId = req.user?.Role === 'SuperAdmin' ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
     const userId = req.user?.UserID;
 
     switch (type) {
@@ -428,14 +430,14 @@ export const uploadVehicles = async (req: AuthRequest, res: Response) => {
     const usersResult = await pool.request().query('SELECT UserID, Email FROM Users');
     const usersMap = new Map(usersResult.recordset.map((u: any) => [u.Email, u.UserID]));
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((req.user?.Role || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     for (const [index, row] of data.entries()) {
       try {
         // Resolve Company
         let companyId = req.user?.CompanyID;
         const companyName = (row as any)['CompanyName'];
-        if (isSuperAdmin && companyName) {
+        if (elevated && companyName) {
             companyId = companiesMap.get(companyName) || null;
             if (!companyId) throw new Error(`Company not found: ${companyName}`);
         }
@@ -572,9 +574,10 @@ export const uploadInsurance = async (req: AuthRequest, res: Response) => {
         if (!plate) throw new Error('Plate is required');
 
         // Find vehicle ID
+        const elevatedVehicle = isElevatedRole(req.user?.Role);
         const vehicleResult = await pool.request()
           .input('Plate', sql.NVarChar(20), plate)
-          .input('CompanyID', sql.Int, req.user?.Role === 'SuperAdmin' ? null : req.user?.CompanyID || null)
+          .input('CompanyID', sql.Int, elevatedVehicle ? null : req.user?.CompanyID || null)
           .input('UserID', sql.Int, req.user?.UserID)
           .query('SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))');
         
@@ -648,9 +651,10 @@ export const uploadFuel = async (req: AuthRequest, res: Response) => {
         const plate = (row as any)['Plate'];
         if (!plate) throw new Error('Plate is required');
 
+        const elevatedFuel = isElevatedRole(req.user?.Role);
         const vehicleResult = await pool.request()
           .input('Plate', sql.NVarChar(20), plate)
-          .input('CompanyID', sql.Int, req.user?.Role === 'SuperAdmin' ? null : req.user?.CompanyID || null)
+          .input('CompanyID', sql.Int, elevatedFuel ? null : req.user?.CompanyID || null)
           .input('UserID', sql.Int, req.user?.UserID)
           .query('SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))');
         
@@ -785,7 +789,8 @@ export const uploadMonthlyKm = async (req: AuthRequest, res: Response): Promise<
         const vehicle = vehicleResult.recordset[0];
 
         // Permission check
-        if (req.user?.Role !== 'SuperAdmin' && req.user?.CompanyID && vehicle.CompanyID !== req.user.CompanyID) {
+        const elevatedKm = isElevatedRole(req.user?.Role);
+        if (!elevatedKm && req.user?.CompanyID && vehicle.CompanyID !== req.user.CompanyID) {
            errors.push(`Row ${index + 2}: Permission denied for vehicle: ${plate}`);
            continue;
         }

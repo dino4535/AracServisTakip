@@ -3,6 +3,7 @@ import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../services/auditService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getAllInspections = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -12,16 +13,14 @@ export const getAllInspections = async (req: AuthRequest, res: Response): Promis
     const offset = (pageNum - 1) * limitNum;
     
     const pool = await connectDB();
-    const companyId = req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
     const userId = req.user?.UserID;
-    const userRole = req.user?.Role;
 
     let whereClause = 'WHERE 1=1';
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
-
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -31,14 +30,14 @@ export const getAllInspections = async (req: AuthRequest, res: Response): Promis
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else if (companyId) {
-        whereClause += ` AND v.CompanyID = @CompanyID`;
       } else {
-        whereClause += ` AND (v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        whereClause += ` AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
+    } else {
+      whereClause += ` AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
     }
 
     if (vehicleId) {
@@ -75,16 +74,9 @@ export const getAllInspections = async (req: AuthRequest, res: Response): Promis
 
     const request = pool.request()
       .input('Offset', sql.Int, offset)
-      .input('Limit', sql.Int, limitNum);
-    
-    if (!isSuperAdmin) {
-      if (companyId) {
-        request.input('CompanyID', sql.Int, companyId);
-      }
-      if (userId) {
-        request.input('UserID', sql.Int, userId);
-      }
-    }
+      .input('Limit', sql.Int, limitNum)
+      .input('CompanyID', sql.Int, companyId)
+      .input('UserID', sql.Int, userId);
     
     if (vehicleId) {
       request.input('VehicleID', sql.Int, vehicleId);
@@ -120,14 +112,14 @@ export const getInspectionById = async (req: AuthRequest, res: Response): Promis
   try {
     const { id } = req.params;
     const pool = await connectDB();
-    const companyId = req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     const result = await pool
       .request()
       .input('InspectionID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, companyId || null)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 
           i.*, 
@@ -135,7 +127,7 @@ export const getInspectionById = async (req: AuthRequest, res: Response): Promis
         FROM VehicleInspections i
         LEFT JOIN Vehicles v ON i.VehicleID = v.VehicleID
         WHERE i.InspectionID = @InspectionID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -168,17 +160,18 @@ export const createInspection = async (req: AuthRequest, res: Response): Promise
     }
 
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Verify vehicle access
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, vehicleId)
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 1 FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
       
     if (vehicleCheck.recordset.length === 0) {
@@ -227,18 +220,19 @@ export const updateInspection = async (req: AuthRequest, res: Response): Promise
     const notes = body.notes ?? body.Notes;
 
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     const check = await pool.request()
       .input('InspectionID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT i.*, v.CompanyID
         FROM VehicleInspections i
         JOIN Vehicles v ON i.VehicleID = v.VehicleID
         WHERE i.InspectionID = @InspectionID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -311,19 +305,20 @@ export const deleteInspection = async (req: AuthRequest, res: Response): Promise
   try {
     const { id } = req.params;
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Check access
     const check = await pool.request()
       .input('InspectionID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 1 
         FROM VehicleInspections i
         JOIN Vehicles v ON i.VehicleID = v.VehicleID
         WHERE i.InspectionID = @InspectionID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);

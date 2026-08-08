@@ -6,6 +6,7 @@ import { AuthRequest } from '../middleware/auth';
 import { fuelSchema } from '../schemas/fuelSchema';
 import { logAudit } from '../services/auditService';
 import { opetService } from '../services/opetService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -18,13 +19,13 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
     const pool = await connectDB();
     const userId = req.user?.UserID;
     const companyId = req.user?.CompanyID;
-    const userRole = req.user?.Role;
+    const elevated = isElevatedRole(req.user?.Role);
+    const scopedCompanyId = elevated ? null : companyId;
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
     let whereClause = "WHERE 1=1";
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -34,12 +35,14 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        whereClause += ` AND (v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        whereClause += ` AND (@ScopedCompanyID IS NULL OR v.CompanyID = @ScopedCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
+    } else {
+      whereClause += ` AND (@ScopedCompanyID IS NULL OR v.CompanyID = @ScopedCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
     }
 
     if (vehicleId) {
@@ -93,7 +96,7 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
 
     const request = pool.request();
     request.input('UserID', sql.Int, userId);
-    if (companyId) request.input('UserCompanyID', sql.Int, companyId);
+    request.input('ScopedCompanyID', sql.Int, scopedCompanyId);
     if (vehicleId) request.input('VehicleID', sql.Int, vehicleId);
     if (startDate) request.input('StartDate', sql.Date, startDate);
     if (endDate) request.input('EndDate', sql.Date, endDate);
@@ -127,20 +130,20 @@ export const getFuelById = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { id } = req.params as { id: string };
     const pool = await connectDB();
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((req.user?.Role || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     const result = await pool.request()
       .input('FuelRecordID', sql.Int, parseInt(id))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('UserCompanyID', sql.Int, req.user?.CompanyID || 0)
-      .input('Role', sql.NVarChar, isSuperAdmin ? 'SuperAdmin' : req.user?.Role)
+      .input('CompanyID', sql.Int, companyId)
       .query(`
         SELECT f.*, v.Plate, CONCAT(u.Name, ' ', u.Surname) as FilledByName
         FROM FuelRecords f
         JOIN Vehicles v ON f.VehicleID = v.VehicleID
         LEFT JOIN Users u ON f.FilledBy = u.UserID
         WHERE f.FuelRecordID = @FuelRecordID
-        AND (@Role = 'SuperAdmin' OR v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (result.recordset.length === 0) {
@@ -167,18 +170,18 @@ export const createFuelRecord = async (req: AuthRequest, res: Response): Promise
     const { vehicleId, fuelDate, liters, costPerLiter, totalCost, fuelStation, filledBy, kilometer, fuelType, invoiceNo } = validation.data as any;
 
     const pool = await connectDB();
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((req.user?.Role || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Check vehicle access
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, vehicleId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('UserCompanyID', sql.Int, req.user?.CompanyID || 0)
-      .input('Role', sql.NVarChar, isSuperAdmin ? 'SuperAdmin' : req.user?.Role)
+      .input('CompanyID', sql.Int, companyId)
       .query(`
         SELECT CompanyID FROM Vehicles 
         WHERE VehicleID = @VehicleID 
-        AND (@Role = 'SuperAdmin' OR CompanyID = @UserCompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (vehicleCheck.recordset.length === 0) {
@@ -236,20 +239,20 @@ export const updateFuelRecord = async (req: AuthRequest, res: Response): Promise
     }
 
     const pool = await connectDB();
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((req.user?.Role || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Check access and get old data
     const oldDataResult = await pool.request()
       .input('FuelRecordID', sql.Int, parseInt(id))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('UserCompanyID', sql.Int, req.user?.CompanyID || 0)
-      .input('Role', sql.NVarChar, isSuperAdmin ? 'SuperAdmin' : req.user?.Role)
+      .input('CompanyID', sql.Int, companyId)
       .query(`
         SELECT f.* 
         FROM FuelRecords f
         JOIN Vehicles v ON f.VehicleID = v.VehicleID
         WHERE f.FuelRecordID = @FuelRecordID
-        AND (@Role = 'SuperAdmin' OR v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (oldDataResult.recordset.length === 0) {
@@ -303,20 +306,20 @@ export const deleteFuelRecord = async (req: AuthRequest, res: Response): Promise
   try {
     const { id } = req.params as { id: string };
     const pool = await connectDB();
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((req.user?.Role || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Check access and get old data
     const oldDataResult = await pool.request()
       .input('FuelRecordID', sql.Int, parseInt(id))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('UserCompanyID', sql.Int, req.user?.CompanyID || 0)
-      .input('Role', sql.NVarChar, isSuperAdmin ? 'SuperAdmin' : req.user?.Role)
+      .input('CompanyID', sql.Int, companyId)
       .query(`
         SELECT f.* 
         FROM FuelRecords f
         JOIN Vehicles v ON f.VehicleID = v.VehicleID
         WHERE f.FuelRecordID = @FuelRecordID
-        AND (@Role = 'SuperAdmin' OR v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (oldDataResult.recordset.length === 0) {
@@ -345,18 +348,18 @@ export const getFuelConsumption = async (req: AuthRequest, res: Response): Promi
     const { startDate, endDate } = req.query;
     
     const pool = await connectDB();
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((req.user?.Role || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Check access
     const accessCheck = await pool.request()
       .input('VehicleID', sql.Int, vehicleId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('UserCompanyID', sql.Int, req.user?.CompanyID || 0)
-      .input('Role', sql.NVarChar, isSuperAdmin ? 'SuperAdmin' : req.user?.Role)
+      .input('CompanyID', sql.Int, companyId)
       .query(`
         SELECT CompanyID FROM Vehicles 
         WHERE VehicleID = @VehicleID 
-        AND (@Role = 'SuperAdmin' OR CompanyID = @UserCompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (accessCheck.recordset.length === 0) {
@@ -465,10 +468,7 @@ export const syncOpetData = async (req: AuthRequest, res: Response): Promise<voi
     const { startDate, endDate } = req.body;
     
     // Check for admin role
-    const userRole = req.user?.Role?.toLowerCase() || '';
-    const allowedRoles = ['superadmin', 'super admin', 'admin'];
-    
-    if (!allowedRoles.includes(userRole)) {
+    if (!isElevatedRole(req.user?.Role)) {
       res.status(403).json({ error: 'Only admins can perform sync operations' });
       return;
     }

@@ -7,6 +7,7 @@ import { accidentSchema } from '../schemas/accidentSchema';
 import { logAudit } from '../services/auditService';
 import { createNotification } from '../services/notificationService';
 import { sendEmail } from '../services/emailService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getAllAccidents = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -16,12 +17,15 @@ export const getAllAccidents = async (req: AuthRequest, res: Response): Promise<
     const offset = (pageNum - 1) * limitNum;
     
     const pool = await connectDB();
-    const companyId = req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let whereClause = 'WHERE 1=1';
 
-    if (req.user?.Role !== 'SuperAdmin') {
+    if (!elevated) {
       whereClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+    } else {
+      whereClause += ` AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
     }
 
     if (vehicleId) {
@@ -68,12 +72,9 @@ export const getAllAccidents = async (req: AuthRequest, res: Response): Promise<
 
     const request = pool.request()
       .input('UserID', sql.Int, req.user?.UserID)
+      .input('CompanyID', sql.Int, companyId)
       .input('Offset', sql.Int, offset)
       .input('Limit', sql.Int, limitNum);
-    
-    if (req.user?.Role !== 'SuperAdmin') {
-      request.input('CompanyID', sql.Int, companyId || 0);
-    }
     
     if (vehicleId) {
       request.input('VehicleID', sql.Int, vehicleId);
@@ -112,14 +113,14 @@ export const getAccidentById = async (req: AuthRequest, res: Response): Promise<
   try {
     const { id } = req.params;
     const pool = await connectDB();
-    const companyId = req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     const result = await pool
       .request()
       .input('AccidentID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, companyId || 0)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 
           a.*, 
@@ -131,7 +132,7 @@ export const getAccidentById = async (req: AuthRequest, res: Response): Promise<
         LEFT JOIN Vehicles v ON a.VehicleID = v.VehicleID
         LEFT JOIN Users u ON a.DriverID = u.UserID
         WHERE a.AccidentID = @AccidentID
-        AND (@Role = 'SuperAdmin' OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (result.recordset.length === 0) {
@@ -295,19 +296,20 @@ export const updateAccident = async (req: AuthRequest, res: Response): Promise<v
 
     const { vehicleId, driverId, accidentDate, reportNumber, description, cost, faultRate, status, location } = validation.data;
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     // Check access
     const checkQuery = await pool.request()
       .input('AccidentID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT a.AccidentID, a.VehicleID, a.Status, a.DriverID
         FROM AccidentRecords a
         JOIN Vehicles v ON a.VehicleID = v.VehicleID
         WHERE a.AccidentID = @AccidentID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);

@@ -2,16 +2,17 @@ import { Request, Response } from 'express';
 import { connectDB } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import sql from 'mssql';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const pool = await connectDB();
     const userId = req.user?.UserID;
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, userId)
@@ -23,11 +24,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(v.CompanyID = @CompanyID OR @CompanyID IS NULL OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
     }
 
@@ -69,11 +70,11 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
   try {
     const pool = await connectDB();
     const userId = req.user?.UserID;
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, userId)
@@ -85,11 +86,11 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(v.CompanyID = @CompanyID OR @CompanyID IS NULL OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
     }
 
@@ -146,11 +147,11 @@ export const getFuelConsumption = async (req: AuthRequest, res: Response): Promi
   try {
     const pool = await connectDB();
     const userId = req.user?.UserID;
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, userId)
@@ -162,11 +163,11 @@ export const getFuelConsumption = async (req: AuthRequest, res: Response): Promi
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(v.CompanyID = @CompanyID OR @CompanyID IS NULL OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
     }
 
@@ -205,11 +206,11 @@ export const getMaintenanceCosts = async (req: AuthRequest, res: Response): Prom
   try {
     const pool = await connectDB();
     const userId = req.user?.UserID;
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, userId)
@@ -221,11 +222,11 @@ export const getMaintenanceCosts = async (req: AuthRequest, res: Response): Prom
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(v.CompanyID = @CompanyID OR @CompanyID IS NULL OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       }
     }
 
