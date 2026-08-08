@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
+import { isElevatedRole, roleMatches } from '../utils/authScope';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -77,8 +78,7 @@ export const authorize = (permission: string) => {
       return;
     }
 
-    const userRole = req.user.Role?.toLowerCase() || '';
-    if (userRole === 'superadmin' || userRole === 'super admin') {
+    if (isElevatedRole(req.user.Role)) {
       next();
       return;
     }
@@ -99,12 +99,12 @@ export const authorizeRole = (roles: string[]) => {
       return;
     }
 
-    if (req.user.Role === 'SuperAdmin' || req.user.Role === 'Super Admin') {
+    if (isElevatedRole(req.user.Role)) {
       next();
       return;
     }
 
-    if (!roles.includes(req.user.Role || '')) {
+    if (!roleMatches(req.user.Role, roles)) {
       res.status(403).json({ error: 'Insufficient permissions' });
       return;
     }

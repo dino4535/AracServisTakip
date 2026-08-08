@@ -4,6 +4,7 @@ import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { maintenanceSchema } from '../schemas/maintenanceSchema';
 import { logAudit } from '../services/auditService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -18,12 +19,12 @@ export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response):
     const companyId = req.user?.CompanyID;
     const userRole = req.user?.Role;
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let whereClause = "WHERE 1=1";
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -33,7 +34,7 @@ export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response):
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -82,7 +83,7 @@ export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response):
 
     const request = pool.request();
     
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (companyId) {
         request.input('CompanyID', sql.Int, companyId);
       }
@@ -125,12 +126,12 @@ export const getMaintenanceById = async (req: AuthRequest, res: Response): Promi
     const { id } = req.params;
     const pool = await connectDB();
 
+    const elevated = isElevatedRole(req.user?.Role);
     const result = await pool
       .request()
       .input('MaintenanceID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || 0)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 
           m.*, 
@@ -140,7 +141,7 @@ export const getMaintenanceById = async (req: AuthRequest, res: Response): Promi
         LEFT JOIN Vehicles v ON m.VehicleID = v.VehicleID
         LEFT JOIN Users u ON m.CreatedBy = u.UserID
         WHERE m.MaintenanceID = @MaintenanceID
-        AND (@Role = 'SuperAdmin' OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (result.recordset.length === 0) {
@@ -169,9 +170,10 @@ export const createMaintenanceRecord = async (req: AuthRequest, res: Response): 
     const pool = await connectDB();
 
     // Verify vehicle access
+    const elevated = isElevatedRole(req.user?.Role);
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, vehicleId)
-      .input('CompanyID', sql.Int, req.user?.Role === 'SuperAdmin' ? null : req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
       .query(`
         SELECT 1 FROM Vehicles v
@@ -234,17 +236,17 @@ export const updateMaintenanceRecord = async (req: AuthRequest, res: Response): 
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('MaintenanceID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 1 
         FROM MaintenanceRecords m
         JOIN Vehicles v ON m.VehicleID = v.VehicleID
         WHERE m.MaintenanceID = @MaintenanceID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -304,17 +306,17 @@ export const deleteMaintenanceRecord = async (req: AuthRequest, res: Response): 
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('MaintenanceID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 1 
         FROM MaintenanceRecords m
         JOIN Vehicles v ON m.VehicleID = v.VehicleID
         WHERE m.MaintenanceID = @MaintenanceID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -358,10 +360,10 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
     const companyId = req.user?.CompanyID;
     const userId = req.user?.UserID;
     const userRole = req.user?.Role;
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -372,7 +374,7 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
     }
 
     let accessClause = `WHERE v.Status = 'Active'`;
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else if (companyId) {
@@ -454,10 +456,10 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
     }
 
     const request = pool.request();
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       request.input('UserID', sql.Int, userId);
     }
-    if (!isSuperAdmin && companyId) {
+    if (!elevated && companyId) {
       request.input('CompanyID', sql.Int, companyId);
     }
 

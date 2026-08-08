@@ -6,6 +6,7 @@ import { hashPassword } from '../utils/password';
 import crypto from 'crypto';
 import { sendEmail } from '../services/emailService';
 import { logAudit } from '../services/auditService';
+import { isElevatedRole } from '../utils/authScope';
 export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page = 1, limit = 50, search } = req.query;
@@ -17,8 +18,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
 
     let whereClause = ' WHERE u.IsActive = 1';
     // Filter by company if not SuperAdmin
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    if (req.user?.CompanyID && !isSuperAdmin) {
+    const elevated = isElevatedRole(req.user?.Role);
+    if (req.user?.CompanyID && !elevated) {
       whereClause += ` AND (u.CompanyID = @CompanyID OR u.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
     }
 
@@ -61,7 +62,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
 
     const request = pool.request();
     
-    if (req.user?.CompanyID && !isSuperAdmin) {
+    if (req.user?.CompanyID && !elevated) {
       request.input('CompanyID', sql.Int, req.user.CompanyID);
       request.input('UserID', sql.Int, req.user.UserID);
     }

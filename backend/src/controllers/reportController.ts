@@ -2,15 +2,16 @@ import { Response } from 'express';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
     const pool = await connectDB();
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && req.user?.UserID) {
+    if (!elevated && req.user?.UserID) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, req.user.UserID)
@@ -22,7 +23,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -81,11 +82,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 export const getVehiclePerformance = async (req: AuthRequest, res: Response) => {
   try {
     const pool = await connectDB();
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && req.user?.UserID) {
+    if (!elevated && req.user?.UserID) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, req.user.UserID)
@@ -97,7 +98,7 @@ export const getVehiclePerformance = async (req: AuthRequest, res: Response) => 
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -192,11 +193,11 @@ export const getVehiclePerformance = async (req: AuthRequest, res: Response) => 
 export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
   try {
     const pool = await connectDB();
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const companyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && req.user?.UserID) {
+    if (!elevated && req.user?.UserID) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, req.user.UserID)
@@ -208,7 +209,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
     }
 
     let accessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -306,8 +307,8 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
 export const getDetailedReport = async (req: AuthRequest, res: Response) => {
   try {
     const { startDate, endDate, companyIds, depotId, driverId, plate } = req.query;
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const userCompanyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const userCompanyId = elevated ? null : req.user?.CompanyID;
 
     // Validasyon
     if (!startDate || !endDate) {
@@ -317,7 +318,7 @@ export const getDetailedReport = async (req: AuthRequest, res: Response) => {
     const pool = await connectDB();
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && req.user?.UserID) {
+    if (!elevated && req.user?.UserID) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, req.user.UserID)
@@ -329,7 +330,7 @@ export const getDetailedReport = async (req: AuthRequest, res: Response) => {
     }
 
     let vehicleAccessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         vehicleAccessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -487,8 +488,8 @@ export const getServiceHistoryReport = async (req: AuthRequest, res: Response) =
   try {
     const { startDate, endDate, companyIds, depotId, driverId, plate, missingCost, page, limit } = req.query;
     // Check for both 'SuperAdmin' and 'Super Admin'
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
-    const userCompanyId = isSuperAdmin ? null : req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const userCompanyId = elevated ? null : req.user?.CompanyID;
 
     // Validasyon
     if (!startDate || !endDate) {
@@ -498,7 +499,7 @@ export const getServiceHistoryReport = async (req: AuthRequest, res: Response) =
     const pool = await connectDB();
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && req.user?.UserID) {
+    if (!elevated && req.user?.UserID) {
       const depotResult = await pool
         .request()
         .input('UserID', sql.Int, req.user.UserID)
@@ -510,7 +511,7 @@ export const getServiceHistoryReport = async (req: AuthRequest, res: Response) =
     }
 
     let vehicleAccessCondition = '1=1';
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         vehicleAccessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {

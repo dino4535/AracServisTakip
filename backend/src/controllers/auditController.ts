@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -29,9 +30,9 @@ export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<voi
     `;
 
     // Access Control
-    const isSuperAdmin = ['SuperAdmin', 'Super Admin', 'SUPER ADMIN', 'SUPERADMIN'].includes(requesterRole || '');
+    const elevated = isElevatedRole(requesterRole);
     
-    if (!isSuperAdmin) {
+    if (!elevated) {
       // Admins can see logs for users in their company
       // This covers both primary company and assigned companies
       query += ` AND (
@@ -69,7 +70,7 @@ export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<voi
     `;
     
     // Repeat filters for count
-    if (!isSuperAdmin) {
+    if (!elevated) {
       countQuery += ` AND (
         u.CompanyID = @RequesterCompanyID  
         OR u.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @RequesterID)
@@ -84,7 +85,7 @@ export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<voi
 
     const requestLogs = pool.request();
     
-    if (!isSuperAdmin) {
+    if (!elevated) {
       requestLogs.input('RequesterCompanyID', sql.Int, requesterCompanyId);
       requestLogs.input('RequesterID', sql.Int, requesterId);
     }
@@ -101,7 +102,7 @@ export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<voi
     const logsResult = await requestLogs.query(query);
 
     const requestCount = pool.request();
-    if (!isSuperAdmin) {
+    if (!elevated) {
       requestCount.input('RequesterCompanyID', sql.Int, requesterCompanyId);
       requestCount.input('RequesterID', sql.Int, requesterId);
     }

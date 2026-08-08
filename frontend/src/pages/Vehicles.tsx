@@ -14,13 +14,12 @@ import { PERMISSIONS } from '../hooks/usePermissions';
 import PermissionGuard from '../utils/PermissionGuard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth';
+import { isElevatedRole } from '../utils/authScope';
 
 const Vehicles = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const isSuperAdmin = Array.isArray(user?.Roles)
-    ? user.Roles.some(role => role === 'SuperAdmin' || role === 'Super Admin')
-    : (user as any)?.Roles === 'SuperAdmin' || (user as any)?.Roles === 'Super Admin';
+  const isElevated = isElevatedRole(user?.Roles);
   
   const [currentPage, setCurrentPage] = useState(1);
   const limit = 50;
@@ -77,7 +76,7 @@ const Vehicles = () => {
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => adminService.getAllCompanies(),
-    enabled: isSuperAdmin,
+    enabled: isElevated,
   });
 
   const { data: depotsResponse } = useQuery({
@@ -95,23 +94,23 @@ const Vehicles = () => {
 
   // Filtered lists
   const filteredDepots = useMemo(() => {
-    if (isSuperAdmin) {
+    if (isElevated) {
       return formData.CompanyID ? depots.filter(d => d.CompanyID === formData.CompanyID) : [];
     }
     return depots.filter(d => d.CompanyID === user?.CompanyID);
-  }, [depots, formData.CompanyID, user]);
+  }, [depots, formData.CompanyID, user, isElevated]);
 
   const filteredManagers = useMemo(() => {
-    const targetCompanyId = isSuperAdmin ? formData.CompanyID : user?.CompanyID;
+    const targetCompanyId = isElevated ? formData.CompanyID : user?.CompanyID;
     if (!targetCompanyId) return [];
     return users.filter(u => u.CompanyID === targetCompanyId && (u.Roles.includes('Manager') || u.Roles.includes('Admin')));
-  }, [users, formData.CompanyID, user]);
+  }, [users, formData.CompanyID, user, isElevated]);
 
   const filteredDrivers = useMemo(() => {
-    const targetCompanyId = isSuperAdmin ? formData.CompanyID : user?.CompanyID;
+    const targetCompanyId = isElevated ? formData.CompanyID : user?.CompanyID;
     if (!targetCompanyId) return [];
     return users.filter(u => u.CompanyID === targetCompanyId && u.Roles.includes('Driver'));
-  }, [users, formData.CompanyID, user]);
+  }, [users, formData.CompanyID, user, isElevated]);
 
   // Mutations
   const createMutation = useMutation({
@@ -198,7 +197,7 @@ const Vehicles = () => {
       setFormData({ 
         CurrentKm: 0, 
         Status: 'Active',
-        CompanyID: isSuperAdmin ? undefined : user?.CompanyID 
+        CompanyID: isElevated ? undefined : user?.CompanyID 
       });
     }
     setIsModalOpen(true);
@@ -537,7 +536,7 @@ const Vehicles = () => {
 
       <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={selectedVehicle ? 'Araç Düzenle' : 'Araç Ekle'}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isSuperAdmin && (
+          {isElevated && (
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">Şirket *</label>
               <select

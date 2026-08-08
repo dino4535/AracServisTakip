@@ -7,6 +7,7 @@ import { createNotification } from '../services/notificationService';
 import { serviceRequestSchema } from '../schemas/serviceRequestSchema';
 import { logAudit } from '../services/auditService';
 import { sendEmail } from '../services/emailService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const getAllServiceRequests = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -19,14 +20,13 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
 
     const userId = req.user?.UserID;
     const companyId = req.user?.CompanyID;
-    const userRole = req.user?.Role;
 
     let accessClause = 'WHERE 1=1';
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -36,7 +36,7 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         accessClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -121,7 +121,7 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
       .input('Offset', sql.Int, offset)
       .input('Limit', sql.Int, limitNum);
     
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (companyId) {
         request.input('CompanyID', sql.Int, companyId);
       }
@@ -175,14 +175,14 @@ export const getServiceRequestById = async (req: AuthRequest, res: Response): Pr
   try {
     const { id } = req.params;
     const pool = await connectDB();
-    const companyId = req.user?.CompanyID;
+    const elevated = isElevatedRole(req.user?.Role);
+    const companyId = elevated ? null : (req.user?.CompanyID || null);
 
     const result = await pool
       .request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, companyId || 0)
+      .input('CompanyID', sql.Int, companyId)
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 
           sr.*, 
@@ -196,7 +196,7 @@ export const getServiceRequestById = async (req: AuthRequest, res: Response): Pr
         LEFT JOIN Users requester ON sr.RequestedBy = requester.UserID
         LEFT JOIN Users assignee ON sr.AssignedTo = assignee.UserID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @Role = 'Super Admin' OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
 
     if (result.recordset.length === 0) {
@@ -225,10 +225,10 @@ export const createServiceRequest = async (req: AuthRequest, res: Response): Pro
     const pool = await connectDB();
 
     // Check vehicle access
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
+    const elevated = isElevatedRole(req.user?.Role);
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, vehicleId)
-      .input('CompanyID', sql.Int, isSuperAdmin ? null : req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
       .query(`
         SELECT 
@@ -480,17 +480,17 @@ export const updateServiceRequest = async (req: AuthRequest, res: Response): Pro
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT sr.RequestID, sr.VehicleID, v.Plate, v.CompanyID
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @Role = 'Super Admin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -600,17 +600,17 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT sr.RequestID 
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @Role = 'Super Admin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -840,17 +840,17 @@ export const rejectServiceRequest = async (req: AuthRequest, res: Response): Pro
       return;
     }
 
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT sr.RequestID, sr.RequestedBy
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @Role = 'Super Admin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -1070,17 +1070,17 @@ export const completeServiceRequest = async (req: AuthRequest, res: Response): P
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT sr.RequestID 
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @Role = 'Super Admin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -1149,17 +1149,17 @@ export const markReturnedFromService = async (req: AuthRequest, res: Response): 
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT sr.RequestID 
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -1368,17 +1368,17 @@ export const deleteServiceRequest = async (req: AuthRequest, res: Response): Pro
     const pool = await connectDB();
 
     // Check access
+    const elevated = isElevatedRole(req.user?.Role);
     const checkQuery = await pool.request()
       .input('RequestID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT sr.RequestID 
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);

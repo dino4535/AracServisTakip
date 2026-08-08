@@ -5,6 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { z } from 'zod';
 import { logAudit } from '../services/auditService';
 import * as XLSX from 'xlsx';
+import { isElevatedRole } from '../utils/authScope';
 
 const saveMonthlyKmSchema = z.object({
   month: z.number().min(1).max(12),
@@ -45,10 +46,10 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
     const userId = req.user?.UserID;
     const userCompanyId = userRole === 'SuperAdmin' ? null : req.user?.CompanyID;
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -58,7 +59,7 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -125,7 +126,7 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
       request.input('SearchTerm', sql.NVarChar, search);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userCompanyId) request.input('UserCompanyID', sql.Int, userCompanyId);
       if (userId) request.input('UserID', sql.Int, userId);
       if (companyId) request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
@@ -171,10 +172,10 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
     const userId = req.user?.UserID;
     const userCompanyId = userRole === 'SuperAdmin' ? null : req.user?.CompanyID;
 
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -184,7 +185,7 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (userDepotIds.length > 0) {
         whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
@@ -262,10 +263,10 @@ export const saveMonthlyKm = async (req: AuthRequest, res: Response): Promise<vo
 
     const userRole = req.user?.Role;
     const companyId = req.user?.CompanyID;
-    const isSuperAdmin = ['superadmin', 'super admin'].includes((userRole || '').toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let userDepotIds: number[] = [];
-    if (!isSuperAdmin && userId) {
+    if (!elevated && userId) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -276,7 +277,7 @@ export const saveMonthlyKm = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const vehicleIds = records.map(r => r.vehicleId);
-    if (vehicleIds.length > 0 && !isSuperAdmin) {
+    if (vehicleIds.length > 0 && !elevated) {
       const accessRequest = pool.request()
         .input('UserID', sql.Int, userId || null);
 

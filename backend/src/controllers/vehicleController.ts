@@ -5,6 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { vehicleSchema, updateKmSchema } from '../schemas/vehicleSchema';
 import { logAudit } from '../services/auditService';
 import { riskService } from '../services/riskService';
+import { isElevatedRole } from '../utils/authScope';
 
 export const calculateRisks = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -32,18 +33,17 @@ export const updateNextMaintenanceKm = async (req: AuthRequest, res: Response): 
     }
 
     const pool = await connectDB();
-    
+    const elevated = isElevatedRole(req.user?.Role);
     const result = await pool.request()
       .input('VehicleID', sql.Int, Number(id))
       .input('NextMaintenanceKm', sql.Int, Number(nextMaintenanceKm))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .query(`
         UPDATE Vehicles
         SET NextMaintenanceKm = @NextMaintenanceKm
         WHERE VehicleID = @VehicleID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR CompanyID = @CompanyID 
           OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -78,7 +78,7 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
     const offset = limitNum > 0 ? (pageNum - 1) * limitNum : 0;
 
     const pool = await connectDB();
-    const isSuperAdmin = req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin';
+    const elevated = isElevatedRole(req.user?.Role);
 
     // Base filtering logic
     let whereClause = "WHERE v.Status != 'Deleted'";
@@ -90,10 +90,12 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
       
     const userDepotIds = userDepotsResult.recordset.map(r => r.DepotID);
 
-    if (userDepotIds.length > 0 && req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
-      whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-    } else if (req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
-      whereClause += ` AND (v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+    if (!elevated) {
+      if (userDepotIds.length > 0) {
+        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+      } else {
+        whereClause += ` AND (v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+      }
     }
 
     if (companyId) {
@@ -159,7 +161,7 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
 
     const request = pool.request();
     
-    if (req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
+    if (!elevated) {
       request.input('UserCompanyID', sql.Int, req.user?.CompanyID || 0);
       request.input('UserID', sql.Int, req.user?.UserID);
     }
@@ -209,13 +211,11 @@ export const getVehicleFullOverviewByPlate = async (req: AuthRequest, res: Respo
     const pool = await connectDB();
     const userId = req.user?.UserID;
     const companyId = req.user?.CompanyID;
-    const userRole = req.user?.Role || '';
-
-    const isSuperAdmin = ['superadmin', 'super admin'].includes(userRole.toLowerCase());
+    const elevated = isElevatedRole(req.user?.Role);
 
     let accessCondition = '1=1';
 
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (companyId) {
         accessCondition = `(v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
       } else if (userId) {
@@ -225,7 +225,7 @@ export const getVehicleFullOverviewByPlate = async (req: AuthRequest, res: Respo
 
     const request = pool.request();
     request.input('Plate', sql.NVarChar(20), plate.trim());
-    if (!isSuperAdmin) {
+    if (!elevated) {
       if (companyId) {
         request.input('CompanyID', sql.Int, companyId);
       }
@@ -352,13 +352,13 @@ export const getVehicleById = async (req: AuthRequest, res: Response): Promise<v
     }
 
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
 
     const result = await pool
       .request()
       .input('VehicleID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 
           v.*, 
@@ -378,11 +378,10 @@ export const getVehicleById = async (req: AuthRequest, res: Response): Promise<v
         LEFT JOIN Users u ON v.AssignedDriverID = u.UserID
         LEFT JOIN Users m ON v.ManagerID = m.UserID
         WHERE v.VehicleID = @VehicleID
-        AND (@CompanyID IS NULL OR (
-             @Role = 'SuperAdmin' OR 
+        AND (@CompanyID IS NULL OR 
              v.CompanyID = @CompanyID OR 
              v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)
-        ))
+        )
       `);
 
     if (result.recordset.length === 0) {
@@ -426,11 +425,11 @@ export const createVehicle = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
 
     let finalCompanyId = req.user?.CompanyID || companyId || null;
 
-    // Security check for Multi-Company User (not SuperAdmin, not Single Company)
-    if (!req.user?.CompanyID && req.user?.Role !== 'SuperAdmin' && finalCompanyId) {
+    if (!elevated && !req.user?.CompanyID && finalCompanyId) {
       const accessCheck = await pool.request()
         .input('UserID', sql.Int, req.user?.UserID)
         .input('CompanyID', sql.Int, finalCompanyId)
@@ -588,10 +587,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const pool = await connectDB();
-
-    const isSuperAdmin =
-      req.user?.Role === 'SuperAdmin' ||
-      req.user?.Role === 'Super Admin';
+    const elevated = isElevatedRole(req.user?.Role);
 
     if (!segment) {
       const rawUpdate = `${make || ''} ${model || ''}`.toLowerCase();
@@ -655,13 +651,12 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
 
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT CompanyID, Plate, VIN, CurrentKm FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -675,13 +670,13 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     const currentVin = vehicleCheck.recordset[0].VIN as string | null;
     const currentCurrentKm = vehicleCheck.recordset[0].CurrentKm as number | null;
 
-    if (companyId && companyId !== currentVehicleCompanyId && !isSuperAdmin) {
-      res.status(403).json({ error: 'Only Super Admin can change vehicle company' });
+    if (companyId && companyId !== currentVehicleCompanyId && !elevated) {
+      res.status(403).json({ error: 'Only elevated users can change vehicle company' });
       return;
     }
 
     let companyUpdateSql = '';
-    if (isSuperAdmin && companyId !== undefined) {
+    if (elevated && companyId !== undefined) {
       companyUpdateSql = 'CompanyID = @CompanyID,';
     }
 
@@ -725,7 +720,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('DepotID', sql.Int, Number(depotId) || null)
       .input('ManagerID', sql.Int, Number(managerId) || null);
 
-    if (isSuperAdmin && companyId !== undefined) {
+    if (elevated && companyId !== undefined) {
       request.input('CompanyID', sql.Int, companyId || null);
     }
 
@@ -794,17 +789,17 @@ export const deleteVehicle = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
 
     // Security Check
     const vehicleCheck = await pool.request()
       .input('VehicleID', sql.Int, Number(id))
-      .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+      .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
-      .input('Role', sql.NVarChar(50), req.user?.Role)
       .query(`
         SELECT 1 FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@Role = 'SuperAdmin' OR @CompanyID IS NULL 
+        AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
           OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
       `);
@@ -859,10 +854,13 @@ export const bulkUpdateVehicleManagers = async (req: AuthRequest, res: Response)
     }
 
     // Check permissions: If user has CompanyID, ensure they only update their own vehicles
+    const elevated = isElevatedRole(req.user?.Role);
     let accessCheckSql = '';
-    if (req.user?.CompanyID) {
+    if (elevated) {
+      accessCheckSql = '';
+    } else if (req.user?.CompanyID) {
       accessCheckSql = `AND CompanyID = ${req.user.CompanyID}`;
-    } else if (req.user?.Role !== 'SuperAdmin') {
+    } else {
       accessCheckSql = `AND (CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
     }
 
