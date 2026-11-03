@@ -5,6 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { maintenanceSchema } from '../schemas/maintenanceSchema';
 import { logAudit } from '../services/auditService';
 import { isElevatedRole } from '../utils/authScope';
+import { syncVehicleMaintenanceKm } from '../utils/vehicleMaintenance';
 
 export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -186,14 +187,6 @@ export const createMaintenanceRecord = async (req: AuthRequest, res: Response): 
       return;
     }
 
-    // Update vehicle's NextMaintenanceKm if provided
-    if (nextServiceKm) {
-      await pool.request()
-        .input('VehicleID', sql.Int, vehicleId)
-        .input('NextServiceKm', sql.Int, nextServiceKm)
-        .query('UPDATE Vehicles SET NextMaintenanceKm = @NextServiceKm WHERE VehicleID = @VehicleID');
-    }
-
     const result = await pool
       .request()
       .input('VehicleID', sql.Int, vehicleId)
@@ -209,6 +202,9 @@ export const createMaintenanceRecord = async (req: AuthRequest, res: Response): 
         OUTPUT inserted.*
         VALUES (@VehicleID, @Type, @Description, @Kilometer, @Cost, @ServiceDate, @NextServiceDate, @CreatedBy)
       `);
+
+    // Aracın LastServiceKm ve NextMaintenanceKm değerlerini senkronize et
+    await syncVehicleMaintenanceKm(pool, vehicleId, nextServiceKm ?? null);
 
     res.status(201).json({
       message: 'Maintenance record created successfully',
@@ -256,14 +252,6 @@ export const updateMaintenanceRecord = async (req: AuthRequest, res: Response): 
       return;
     }
 
-    // Update vehicle's NextMaintenanceKm if provided
-    if (nextServiceKm) {
-      await pool.request()
-        .input('VehicleID', sql.Int, vehicleId)
-        .input('NextServiceKm', sql.Int, nextServiceKm)
-        .query('UPDATE Vehicles SET NextMaintenanceKm = @NextServiceKm WHERE VehicleID = @VehicleID');
-    }
-
     const result = await pool
       .request()
       .input('MaintenanceID', sql.Int, Number(id))
@@ -289,6 +277,9 @@ export const updateMaintenanceRecord = async (req: AuthRequest, res: Response): 
       res.status(404).json({ error: 'Maintenance record not found' });
       return;
     }
+
+    // Aracın LastServiceKm ve NextMaintenanceKm değerlerini senkronize et
+    await syncVehicleMaintenanceKm(pool, vehicleId, nextServiceKm ?? null);
 
     res.json({
       message: 'Maintenance record updated successfully',
@@ -329,11 +320,17 @@ export const deleteMaintenanceRecord = async (req: AuthRequest, res: Response): 
     const result = await pool
       .request()
       .input('MaintenanceID', sql.Int, Number(id))
-      .query('DELETE FROM MaintenanceRecords OUTPUT deleted.MaintenanceID WHERE MaintenanceID = @MaintenanceID');
+      .query('DELETE FROM MaintenanceRecords OUTPUT deleted.MaintenanceID, deleted.VehicleID WHERE MaintenanceID = @MaintenanceID');
 
     if (result.recordset.length === 0) {
       res.status(404).json({ error: 'Maintenance record not found' });
       return;
+    }
+
+    // Silinen kayıt sonrası aracın LastServiceKm/NextMaintenanceKm değerlerini yeniden senkronize et
+    const deletedVehicleId = result.recordset[0].VehicleID;
+    if (deletedVehicleId) {
+      await syncVehicleMaintenanceKm(pool, deletedVehicleId, null);
     }
 
     // Log Audit
@@ -411,18 +408,24 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
           GROUP BY VehicleID
       ),
       LastMaintenance AS (
-          SELECT 
-              VehicleID,
-              MAX(ServiceDate) as LastServiceDate,
-              MAX(Kilometer) as LastServiceKm
-          FROM MaintenanceRecords
-          GROUP BY VehicleID
+          SELECT VehicleID, LastServiceDate, LastServiceKmFromRecords
+          FROM (
+              SELECT
+                  VehicleID,
+                  ServiceDate as LastServiceDate,
+                  Kilometer as LastServiceKmFromRecords,
+                  ROW_NUMBER() OVER (PARTITION BY VehicleID ORDER BY ServiceDate DESC) as rn
+              FROM MaintenanceRecords
+          ) ranked
+          WHERE rn = 1
       )
       SELECT 
           v.VehicleID,
           v.Plate,
           v.CurrentKm,
           v.NextMaintenanceKm,
+          v.LastServiceKm,
+          v.MaintenanceIntervalKm,
           v.Make,
           v.Model,
           v.CompanyID,
@@ -442,7 +445,7 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
           DATEDIFF(day, ks.RecentFirstDate, ks.RecentLastDate) as RecentDaysTracked,
           (ks.RecentLastKm - ks.RecentFirstKm) as RecentKmDiff,
           lm.LastServiceDate,
-          lm.LastServiceKm
+          lm.LastServiceKmFromRecords
       FROM Vehicles v
       LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
       LEFT JOIN Depots d ON v.DepotID = d.DepotID
@@ -491,32 +494,49 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
         avgDailyKm = overallAvg;
       }
 
-      // Default maintenance interval: 15,000 KM
-      const MAINTENANCE_INTERVAL = 15000;
-      const lastServiceKm = record.LastServiceKm || 0;
-      const nextServiceKmCalculated = lastServiceKm + MAINTENANCE_INTERVAL;
-      const nextServiceKm = record.NextMaintenanceKm ? record.NextMaintenanceKm : nextServiceKmCalculated;
-      const remainingKm = nextServiceKm - record.CurrentKm;
-      
+      // Bakim araligi: arac bazli (MaintenanceIntervalKm), yoksa varsayilan 15000
+      const DEFAULT_INTERVAL = 15000;
+      const interval = (record.MaintenanceIntervalKm && record.MaintenanceIntervalKm > 0)
+        ? record.MaintenanceIntervalKm
+        : DEFAULT_INTERVAL;
+
+      // Son servis KM: once arac kolonu (senkron), sonra bakım kayıtlarından hesaplanan
+      const lastServiceKm = record.LastServiceKm ?? record.LastServiceKmFromRecords ?? null;
+
+      // Sonraki bakım hedefi: manuel NextMaintenanceKm varsa o, yoksa son servis + aralik
+      let nextServiceKm = record.NextMaintenanceKm ?? null;
+      if (!nextServiceKm && lastServiceKm && lastServiceKm > 0) {
+        nextServiceKm = lastServiceKm + interval;
+      }
+
+      // Kalan KM: hedef belirlenebiliyorsa hesapla, aksi halde null (tahmin yok)
+      const remainingKm = nextServiceKm ? (nextServiceKm - record.CurrentKm) : null;
+
       let estDaysRemaining = null;
       let estDate = null;
 
-      if (avgDailyKm > 0) {
-        estDaysRemaining = Math.ceil(remainingKm / avgDailyKm);
+      if (remainingKm !== null && avgDailyKm > 0) {
+        estDaysRemaining = remainingKm <= 0 ? 0 : Math.ceil(remainingKm / avgDailyKm);
         const today = new Date();
         const targetDate = new Date(today);
         targetDate.setDate(today.getDate() + estDaysRemaining);
         estDate = targetDate;
       }
 
+      const status = remainingKm === null
+        ? 'OK'
+        : (remainingKm <= 0 ? 'Overdue' : (remainingKm < 1000 ? 'Due Soon' : 'OK'));
+
       return {
         ...record,
         AvgDailyKm: Math.round(avgDailyKm * 10) / 10, // 1 decimal
+        MaintenanceIntervalKm: interval,
+        LastServiceKm: lastServiceKm,
         NextServiceKm: nextServiceKm,
         RemainingKm: remainingKm,
         EstDaysRemaining: estDaysRemaining,
         EstServiceDate: estDate,
-        Status: remainingKm <= 0 ? 'Overdue' : (remainingKm < 1000 ? 'Due Soon' : 'OK')
+        Status: status
       };
     });
 

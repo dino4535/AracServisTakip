@@ -8,6 +8,7 @@ import { serviceRequestSchema } from '../schemas/serviceRequestSchema';
 import { logAudit } from '../services/auditService';
 import { sendEmail } from '../services/emailService';
 import { isElevatedRole } from '../utils/authScope';
+import { syncVehicleMaintenanceKm } from '../utils/vehicleMaintenance';
 
 export const getAllServiceRequests = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -1178,7 +1179,7 @@ export const markReturnedFromService = async (req: AuthRequest, res: Response): 
         UPDATE ServiceRequests
         SET Status = @Status,
             ReturnDate = @ReturnDate
-        OUTPUT inserted.*
+        OUTPUT deleted.Status as PreviousStatus, inserted.*
         WHERE RequestID = @RequestID
       `);
 
@@ -1188,32 +1189,39 @@ export const markReturnedFromService = async (req: AuthRequest, res: Response): 
     }
 
     const serviceRequest = result.recordset[0];
+    const previousStatus = serviceRequest.PreviousStatus;
 
-    // Update Vehicle (NextMaintenanceKm and/or CurrentKm)
-    if ((nextMaintenanceKm !== undefined && nextMaintenanceKm !== null && !isNaN(Number(nextMaintenanceKm))) || 
-        (currentKm !== undefined && currentKm !== null && !isNaN(Number(currentKm)))) {
-      const vehicleRequest = pool.request().input('VehicleID', sql.Int, serviceRequest.VehicleID);
-      const updateFields = [];
+    const hasCurrentKm = currentKm !== undefined && currentKm !== null && !isNaN(Number(currentKm));
+    const hasNextKm = nextMaintenanceKm !== undefined && nextMaintenanceKm !== null && !isNaN(Number(nextMaintenanceKm));
+    const serviceKm = hasCurrentKm ? Number(currentKm) : null;
 
-      if (nextMaintenanceKm !== undefined && nextMaintenanceKm !== null && !isNaN(Number(nextMaintenanceKm))) {
-        vehicleRequest.input('NextMaintenanceKm', sql.Int, Number(nextMaintenanceKm));
-        updateFields.push('NextMaintenanceKm = @NextMaintenanceKm');
-      }
-
-      if (currentKm !== undefined && currentKm !== null && !isNaN(Number(currentKm))) {
-        vehicleRequest.input('CurrentKm', sql.Int, Number(currentKm));
-        updateFields.push('CurrentKm = @CurrentKm');
-      }
-
-      if (updateFields.length > 0) {
-        updateFields.push('UpdatedAt = GETDATE()');
-        await vehicleRequest.query(`
-          UPDATE Vehicles
-          SET ${updateFields.join(', ')}
-          WHERE VehicleID = @VehicleID
-        `);
-      }
+    // Aracın mevcut KM'sini güncelle
+    if (hasCurrentKm) {
+      await pool.request()
+        .input('VehicleID', sql.Int, serviceRequest.VehicleID)
+        .input('CurrentKm', sql.Int, Number(currentKm))
+        .query('UPDATE Vehicles SET CurrentKm = @CurrentKm, UpdatedAt = GETDATE() WHERE VehicleID = @VehicleID');
     }
+
+    // Servis dönüşünü bakım kaydı olarak işle (tekrarlanan dönüşlerde kayıt çoğaltma)
+    if (previousStatus !== 'RETURNED' && serviceKm !== null && serviceKm > 0) {
+      const maintenanceDescription = (serviceRequest.ServiceActions || serviceRequest.Description || 'Servis talebi dönüşü').toString().slice(0, 500);
+      await pool.request()
+        .input('VehicleID', sql.Int, serviceRequest.VehicleID)
+        .input('Type', sql.NVarChar(50), serviceRequest.ServiceType || 'Servis')
+        .input('Description', sql.NVarChar(500), maintenanceDescription)
+        .input('Kilometer', sql.Int, serviceKm)
+        .input('Cost', sql.Decimal(10, 2), serviceRequest.ActualCost != null ? Number(serviceRequest.ActualCost) : null)
+        .input('ServiceDate', sql.DateTime2, serviceRequest.ReturnDate || getTurkeyNow())
+        .input('CreatedBy', sql.Int, req.user?.UserID ?? null)
+        .query(`
+          INSERT INTO MaintenanceRecords (VehicleID, Type, Description, Kilometer, Cost, ServiceDate, CreatedBy)
+          VALUES (@VehicleID, @Type, @Description, @Kilometer, @Cost, @ServiceDate, @CreatedBy)
+        `);
+    }
+
+    // LastServiceKm + NextMaintenanceKm senkronu (manuel sonraki bakım KM verildiyse o kullanılır)
+    await syncVehicleMaintenanceKm(pool, serviceRequest.VehicleID, hasNextKm ? Number(nextMaintenanceKm) : null);
 
     // Log Audit
     await logAudit(

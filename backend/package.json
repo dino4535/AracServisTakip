@@ -10,6 +10,7 @@
     "migrate": "tsx src/database/migrate.ts",
     "seed": "tsx src/database/seed.ts",
     "migrate:trio": "tsx src/database/run_migration_023_trio_vehicle_id.ts",
+    "migrate:service-km": "tsx src/database/run_migration_024_last_service_interval.ts",
     "trio:test": "tsx src/scripts/testTrioApi.ts",
     "trio:link": "tsx src/scripts/linkTrioVehicles.ts",
     "trio:sync": "tsx src/scripts/runTrioSync.ts",

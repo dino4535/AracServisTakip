@@ -691,6 +691,30 @@ const Vehicles = () => {
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">Bakım Aralığı (KM)</label>
+              <input
+                type="number"
+                value={formData.MaintenanceIntervalKm ?? ''}
+                onChange={(e) => setFormData({ ...formData, MaintenanceIntervalKm: parseInt(e.target.value) || null })}
+                className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Örn: 15000 (varsayılan)"
+              />
+              <p className="text-xs text-neutral-400 mt-1">Sonraki bakım hedefi = Son Servis KM + bu aralık.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">Son Servis KM</label>
+              <input
+                type="number"
+                value={formData.LastServiceKm ?? ''}
+                readOnly
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50 text-neutral-500 cursor-not-allowed"
+                placeholder="Servis dönüşünde otomatik işlenir"
+              />
+            </div>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div>

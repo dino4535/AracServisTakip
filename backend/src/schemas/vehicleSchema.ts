@@ -9,6 +9,8 @@ export const vehicleSchema = z.object({
   fuelType: z.enum(['Gasoline', 'Diesel', 'LPG', 'Electric', 'Hybrid']).optional().nullable(),
   currentKm: z.number().int().min(0).optional().nullable(),
   nextMaintenanceKm: z.number().int().min(0).optional().nullable(),
+  maintenanceIntervalKm: z.number().int().min(0).optional().nullable(),
+  lastServiceKm: z.number().int().min(0).optional().nullable(),
   status: z.enum(['Active', 'Maintenance', 'Sold', 'Retired']).default('Active'),
   assignedDriverId: z.number().int().optional().nullable(),
   licenseSerial: z.string().max(50).optional().nullable(),

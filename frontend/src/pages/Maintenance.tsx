@@ -563,7 +563,7 @@ const Maintenance = () => {
                           </td>
                           <td className="px-6 py-4 text-sm text-neutral-600">
                             <div className="flex items-center gap-2">
-                              <span>{p.NextServiceKm?.toLocaleString()}</span>
+                              <span>{p.NextServiceKm?.toLocaleString() ?? '-'}</span>
                               <button
                                 type="button"
                                 onClick={() => handleOpenTargetModal(p)}
@@ -574,7 +574,7 @@ const Maintenance = () => {
                               </button>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-neutral-600">{p.RemainingKm?.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">{p.RemainingKm?.toLocaleString() ?? '-'}</td>
                           <td className="px-6 py-4 text-sm text-neutral-600">
                             {p.EstServiceDate ? (
                               <div className="flex flex-col">

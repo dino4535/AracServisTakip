@@ -141,13 +141,7 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
         c.Name as CompanyName,
         d.Name as DepotName,
         CONCAT(u.Name, ' ', u.Surname) as DriverName,
-        CONCAT(m.Name, ' ', m.Surname) as ManagerName,
-        (
-          SELECT TOP 1 mr.Kilometer
-           FROM MaintenanceRecords mr
-           WHERE mr.VehicleID = v.VehicleID AND mr.Kilometer IS NOT NULL
-           ORDER BY mr.ServiceDate DESC
-        ) as LastServiceKm
+        CONCAT(m.Name, ' ', m.Surname) as ManagerName
       ${baseFromClause}
       ${whereClause}
       ORDER BY v.VehicleID DESC
@@ -254,6 +248,8 @@ export const getVehicleFullOverviewByPlate = async (req: AuthRequest, res: Respo
         v.FuelType,
         v.CurrentKm,
         v.NextMaintenanceKm,
+        v.LastServiceKm,
+        v.MaintenanceIntervalKm,
         v.Status,
         v.AssignedDriverID,
         v.LicenseSerial,
@@ -266,13 +262,7 @@ export const getVehicleFullOverviewByPlate = async (req: AuthRequest, res: Respo
         c.Name as CompanyName,
         d.Name as DepotName,
         CONCAT(dr.Name, ' ', dr.Surname) as DriverName,
-        CONCAT(mgr.Name, ' ', mgr.Surname) as ManagerName,
-        (
-          SELECT TOP 1 mr.Kilometer
-             FROM MaintenanceRecords mr
-             WHERE mr.VehicleID = v.VehicleID AND mr.Kilometer IS NOT NULL
-             ORDER BY mr.ServiceDate DESC
-        ) as LastServiceKm
+        CONCAT(mgr.Name, ' ', mgr.Surname) as ManagerName
       FROM Vehicles v
       LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
       LEFT JOIN Depots d ON v.DepotID = d.DepotID
@@ -365,13 +355,7 @@ export const getVehicleById = async (req: AuthRequest, res: Response): Promise<v
           c.Name as CompanyName,
           d.Name as DepotName,
           CONCAT(u.Name, ' ', u.Surname) as DriverName,
-          CONCAT(m.Name, ' ', m.Surname) as ManagerName,
-          (
-            SELECT TOP 1 mr.Kilometer
-           FROM MaintenanceRecords mr
-           WHERE mr.VehicleID = v.VehicleID AND mr.Kilometer IS NOT NULL
-           ORDER BY mr.ServiceDate DESC
-          ) as LastServiceKm
+          CONCAT(m.Name, ' ', m.Surname) as ManagerName
         FROM Vehicles v
         LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
         LEFT JOIN Depots d ON v.DepotID = d.DepotID
@@ -407,6 +391,7 @@ export const createVehicle = async (req: AuthRequest, res: Response): Promise<vo
     const fuelType = body.fuelType ?? body.FuelType;
     let segment = body.segment ?? body.Segment;
     const currentKm = body.currentKm ?? body.CurrentKm;
+    const maintenanceIntervalKm = body.maintenanceIntervalKm ?? body.MaintenanceIntervalKm;
     const status = body.status ?? body.Status;
     const assignedDriverId = body.assignedDriverId ?? body.AssignedDriverID;
     const licenseSerial = body.licenseSerial ?? body.LicenseSerial;
@@ -514,6 +499,7 @@ export const createVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('FuelType', sql.NVarChar(30), fuelType || null)
       .input('Segment', sql.NVarChar(50), segment || null)
       .input('CurrentKm', sql.Int, currentKm || 0)
+      .input('MaintenanceIntervalKm', sql.Int, Number(maintenanceIntervalKm) || 15000)
       .input('Status', sql.NVarChar(20), status || 'Active')
       .input('AssignedDriverID', sql.Int, assignedDriverId || null)
       .input('LicenseSerial', sql.NVarChar(50), licenseSerial || null)
@@ -524,9 +510,9 @@ export const createVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('DepotID', sql.Int, depotId || null)
       .input('ManagerID', sql.Int, managerId || null)
       .query(`
-        INSERT INTO Vehicles (Plate, CompanyID, VIN, Make, Model, Year, FuelType, Segment, CurrentKm, Status, AssignedDriverID, LicenseSerial, LicenseNumber, EngineNumber, Color, RegistrationDate, DepotID, ManagerID)
+        INSERT INTO Vehicles (Plate, CompanyID, VIN, Make, Model, Year, FuelType, Segment, CurrentKm, MaintenanceIntervalKm, Status, AssignedDriverID, LicenseSerial, LicenseNumber, EngineNumber, Color, RegistrationDate, DepotID, ManagerID)
         OUTPUT inserted.*
-        VALUES (@Plate, @CompanyID, @VIN, @Make, @Model, @Year, @FuelType, @Segment, @CurrentKm, @Status, @AssignedDriverID, @LicenseSerial, @LicenseNumber, @EngineNumber, @Color, @RegistrationDate, @DepotID, @ManagerID)
+        VALUES (@Plate, @CompanyID, @VIN, @Make, @Model, @Year, @FuelType, @Segment, @CurrentKm, @MaintenanceIntervalKm, @Status, @AssignedDriverID, @LicenseSerial, @LicenseNumber, @EngineNumber, @Color, @RegistrationDate, @DepotID, @ManagerID)
       `);
 
     // Log Audit
@@ -563,6 +549,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     let segment = body.segment ?? body.Segment;
     const currentKm = body.currentKm ?? body.CurrentKm;
     const nextMaintenanceKm = body.nextMaintenanceKm ?? body.NextMaintenanceKm;
+    const maintenanceIntervalKm = body.maintenanceIntervalKm ?? body.MaintenanceIntervalKm;
     const status = body.status ?? body.Status;
     const assignedDriverId = body.assignedDriverId ?? body.AssignedDriverID;
     const licenseSerial = body.licenseSerial ?? body.LicenseSerial;
@@ -655,7 +642,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
       .query(`
-        SELECT CompanyID, Plate, VIN, CurrentKm, TrioVehicleId FROM Vehicles v
+        SELECT CompanyID, Plate, VIN, CurrentKm, TrioVehicleId, MaintenanceIntervalKm FROM Vehicles v
         WHERE VehicleID = @VehicleID
         AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
@@ -671,6 +658,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     const currentVin = vehicleCheck.recordset[0].VIN as string | null;
     const currentCurrentKm = vehicleCheck.recordset[0].CurrentKm as number | null;
     const currentTrioVehicleId = vehicleCheck.recordset[0].TrioVehicleId as string | null;
+    const currentMaintenanceIntervalKm = vehicleCheck.recordset[0].MaintenanceIntervalKm as number | null;
 
     if (companyId && companyId !== currentVehicleCompanyId && !elevated) {
       res.status(403).json({ error: 'Only elevated users can change vehicle company' });
@@ -698,6 +686,15 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       const parsedKm = Number(currentKm);
       if (!isNaN(parsedKm)) {
         finalCurrentKm = parsedKm;
+      }
+    }
+
+    // Bakim araligi: gonderildiyse guncelle, gonderilmediyse mevcut degeri koru
+    let finalIntervalKm = currentMaintenanceIntervalKm ?? null;
+    if (maintenanceIntervalKm !== undefined && maintenanceIntervalKm !== null && String(maintenanceIntervalKm).trim() !== '') {
+      const parsedInterval = Number(maintenanceIntervalKm);
+      if (!isNaN(parsedInterval)) {
+        finalIntervalKm = parsedInterval;
       }
     }
 
@@ -731,6 +728,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('Segment', sql.NVarChar(50), segment || null)
       .input('CurrentKm', sql.Int, finalCurrentKm)
       .input('NextMaintenanceKm', sql.Int, Number(nextMaintenanceKm) || null)
+      .input('MaintenanceIntervalKm', sql.Int, finalIntervalKm)
       .input('Status', sql.NVarChar(20), status || 'Active')
       .input('AssignedDriverID', sql.Int, Number(assignedDriverId) || null)
       .input('LicenseSerial', sql.NVarChar(50), licenseSerial || null)
@@ -758,6 +756,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
             Segment = @Segment,
             CurrentKm = @CurrentKm,
             NextMaintenanceKm = @NextMaintenanceKm,
+            MaintenanceIntervalKm = @MaintenanceIntervalKm,
             Status = @Status,
             AssignedDriverID = @AssignedDriverID,
             LicenseSerial = @LicenseSerial,
