@@ -88,7 +88,7 @@ const Sidebar = () => {
           permission: PERMISSIONS.FUEL.VIEW,
         },
         {
-          name: 'Aylık KM Girişi',
+          name: 'Araç KM Geçmişi',
           icon: Gauge,
           path: '/monthly-km',
           permission: PERMISSIONS.VEHICLES.EDIT, // Using VEHICLES.EDIT permission

@@ -16,6 +16,7 @@ import inspectionRoutes from './inspectionRoutes';
 import accidentRoutes from './accidentRoutes';
 import auditRoutes from './auditRoutes';
 import settingsRoutes from './settingsRoutes';
+import trioRoutes from './trioRoutes';
 
 const router = Router();
 
@@ -28,6 +29,7 @@ router.use('/inspections', inspectionRoutes);
 router.use('/accidents', accidentRoutes);
 router.use('/audit-logs', auditRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/trio', trioRoutes);
 router.use('/fuel', fuelRoutes);
 router.use('/service-requests', serviceRequestRoutes);
 router.use('/notifications', notificationRoutes);

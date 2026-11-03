@@ -1,422 +1,299 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { monthlyKmService, MonthlyKmRecord } from '../services/monthlyKmService';
+import { useQuery } from '@tanstack/react-query';
+import { monthlyKmService, KmRangeRecord } from '../services/monthlyKmService';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/layout/Layout';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
-import { Save, Calendar, RefreshCw, History } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { Calendar, History, Gauge, AlertTriangle } from 'lucide-react';
 
-const MonthlyKmEntry = () => {
+const isoDate = (d: Date) => d.toISOString().split('T')[0];
+
+const VehicleKmHistory = () => {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [editedValues, setEditedValues] = useState<Record<number, number>>({});
-  const [historyVehicle, setHistoryVehicle] = useState<{ id: number; plate: string } | null>(null);
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const today = new Date();
+  const [startDate, setStartDate] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`);
+  const [endDate, setEndDate] = useState(isoDate(today));
+
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'entry' | 'missing'>('entry');
+  const [activeTab, setActiveTab] = useState<'history' | 'missing'>('history');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [historyVehicle, setHistoryVehicle] = useState<{ id: number; plate: string } | null>(null);
+  const [debounceTimer, setDebounceTimer] = useState<number | null>(null);
 
-  const [year, month] = selectedDate.split('-').map(Number);
+  const onlyMissing = activeTab === 'missing';
 
-  const { data: recordsData, isLoading } = useQuery({
-    queryKey: ['monthlyKm', month, year, user?.CompanyID, currentPage, searchTerm],
+  const { data: rangeData, isLoading } = useQuery({
+    queryKey: ['kmRange', startDate, endDate, user?.CompanyID, searchTerm, activeTab, currentPage],
     queryFn: async () => {
-      const response = await monthlyKmService.getRecords(month, year, user?.CompanyID, {
+      const response = await monthlyKmService.getKmRange({
+        startDate,
+        endDate,
+        companyId: user?.CompanyID,
+        search: searchTerm || undefined,
+        onlyMissing,
         page: currentPage,
         limit: 50,
-        search: searchTerm || undefined,
       });
       if (response.pagination) {
-        setPagination({
-          total: response.pagination.total,
-          totalPages: response.pagination.totalPages
-        });
+        setPagination({ total: response.pagination.total, totalPages: response.pagination.totalPages });
       }
       return response;
     },
-    enabled: activeTab === 'entry',
   });
 
-  const { data: missingRecords, isLoading: isMissingLoading } = useQuery({
-    queryKey: ['missingMonthlyKm', month, year, user?.CompanyID],
-    queryFn: () => monthlyKmService.getMissingRecords(month, year, user?.CompanyID),
-    enabled: activeTab === 'missing',
-  });
-
-  const records = recordsData?.data || [];
+  const records: KmRangeRecord[] = rangeData?.data || [];
 
   const { data: historyData } = useQuery({
     queryKey: ['vehicleKmHistory', historyVehicle?.id],
-    queryFn: () => historyVehicle ? monthlyKmService.getVehicleHistory(historyVehicle.id) : Promise.resolve([]),
+    queryFn: () => (historyVehicle ? monthlyKmService.getVehicleHistory(historyVehicle.id) : Promise.resolve([])),
     enabled: !!historyVehicle,
   });
-
-  const saveMutation = useMutation({
-    mutationFn: monthlyKmService.saveRecords,
-    onSuccess: () => {
-      toast.success('Kayıtlar başarıyla güncellendi');
-      queryClient.invalidateQueries({ queryKey: ['monthlyKm'] });
-      setEditedValues({});
-    },
-    onError: (error) => {
-      console.error('Save error:', error);
-      toast.error('Kayıt sırasında bir hata oluştu');
-    }
-  });
-
-  const handleKmChange = (vehicleId: number, value: string) => {
-    const numValue = parseInt(value);
-    if (!isNaN(numValue)) {
-      setEditedValues(prev => ({ ...prev, [vehicleId]: numValue }));
-    } else if (value === '') {
-      // Allow clearing the input temporarily, but don't delete from editedValues yet if invalid
-       const newValues = { ...editedValues };
-       delete newValues[vehicleId];
-       setEditedValues(newValues);
-    }
-  };
-
-  const handleSave = () => {
-    const recordsToSave = Object.entries(editedValues).map(([vehicleId, kilometer]) => ({
-      vehicleId: Number(vehicleId),
-      kilometer
-    }));
-
-    if (recordsToSave.length === 0) {
-      toast('Değişiklik yapılmadı');
-      return;
-    }
-
-    saveMutation.mutate({
-      month,
-      year,
-      records: recordsToSave
-    });
-  };
-
-  const getInputValue = (record: MonthlyKmRecord) => {
-    if (editedValues[record.VehicleID] !== undefined) {
-      return editedValues[record.VehicleID];
-    }
-    return record.MonthlyKm || '';
-  };
-
-  const copyCurrentKm = (record: MonthlyKmRecord) => {
-    setEditedValues(prev => ({
-      ...prev,
-      [record.VehicleID]: record.CurrentTotalKm
-    }));
-  };
-
-  const [debounceTimer, setDebounceTimer] = useState<number | null>(null);
 
   const onSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchInput(value);
-
-    if (debounceTimer) {
-      window.clearTimeout(debounceTimer);
-    }
-
+    if (debounceTimer) window.clearTimeout(debounceTimer);
     const timer = window.setTimeout(() => {
       const trimmed = value.trim();
       setCurrentPage(1);
       setSearchTerm(trimmed.length >= 2 ? trimmed : '');
     }, 500);
-
     setDebounceTimer(timer);
+  };
+
+  const switchTab = (tab: 'history' | 'missing') => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
+
+  const fmt = (n: number | null | undefined) => (n == null ? '-' : Number(n).toLocaleString());
+
+  const kmColor = (km: number | null) => {
+    if (km == null) return 'text-gray-400';
+    if (km > 0) return 'text-green-600';
+    if (km < 0) return 'text-red-600';
+    return 'text-gray-500';
   };
 
   return (
     <Layout>
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Aylık Kilometre Girişi</h1>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <Calendar className="h-5 w-5 text-gray-500" />
-            <input
-              type="month"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-            />
+      <div className="space-y-6">
+        {/* Başlık + filtreler */}
+        <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+          <div className="flex items-center space-x-3">
+            <Gauge className="w-6 h-6 text-blue-600" />
+            <h1 className="text-2xl font-bold text-gray-900">Araç KM Geçmişi</h1>
           </div>
-          <div className="flex items-center space-x-2">
-            <input
-              type="text"
-              value={searchInput}
-              onChange={onSearchChange}
-              placeholder="Plaka, marka, model..."
-              className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2 text-sm"
-            />
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={Object.keys(editedValues).length === 0 || saveMutation.isPending}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm p-1 overflow-hidden border border-gray-100 mb-4">
-        <nav className="flex space-x-4 px-4" aria-label="Tabs">
-          <button
-            onClick={() => setActiveTab('entry')}
-            className={`${
-              activeTab === 'entry'
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-500 hover:text-gray-700'
-            } px-3 py-2 font-medium text-sm rounded-md`}
-          >
-            KM Girişi
-          </button>
-          <button
-            onClick={() => setActiveTab('missing')}
-            className={`${
-              activeTab === 'missing'
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-500 hover:text-gray-700'
-            } px-3 py-2 font-medium text-sm rounded-md`}
-          >
-            Giriş Yapmayanlar
-          </button>
-        </nav>
-      </div>
-
-      {activeTab === 'entry' ? (
-        <>
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-            {isLoading && (
-              <div className="px-6 py-2 text-right text-sm text-gray-500">
-                Veriler yükleniyor...
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Başlangıç</label>
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-4 w-4 text-gray-400" />
+                <input
+                  type="date"
+                  value={startDate}
+                  max={endDate}
+                  onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
+                  className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
               </div>
-            )}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Bitiş</label>
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-4 w-4 text-gray-400" />
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate}
+                  onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
+                  className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Ara</label>
+              <input
+                type="text"
+                value={searchInput}
+                onChange={onSearchChange}
+                placeholder="Plaka, marka, model..."
+                className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Sekmeler */}
+        <div className="bg-white rounded-xl shadow-sm p-1 overflow-hidden border border-gray-100">
+          <nav className="flex space-x-4 px-4" aria-label="Tabs">
+            <button
+              onClick={() => switchTab('history')}
+              className={`${activeTab === 'history' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'} px-3 py-2 font-medium text-sm rounded-md`}
+            >
+              KM Geçmişi
+            </button>
+            <button
+              onClick={() => switchTab('missing')}
+              className={`${activeTab === 'missing' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'} px-3 py-2 font-medium text-sm rounded-md flex items-center`}
+            >
+              <AlertTriangle className="h-4 w-4 mr-1" />
+              KM Verisi Alınamayanlar
+            </button>
+          </nav>
+        </div>
+
+        <div className="text-sm text-gray-500">
+          {startDate} – {endDate} aralığı · {pagination.total} araç
+        </div>
+
+        {activeTab === 'history' ? (
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+            {isLoading && <div className="px-6 py-2 text-right text-sm text-gray-500">Veriler yükleniyor...</div>}
             <table className="min-w-full divide-y divide-gray-200 hidden md:table">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Araç</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marka / Model</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mevcut KM (Sistem)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Geçen Ay KM</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {month}/{year} KM
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fark</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Son Güncelleme</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mevcut Güncel KM</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aralık Başı KM</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aralık Sonu KM</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aralıkta Yapılan KM</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Son Okuma</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {records?.map((record) => {
-                  const currentValue = getInputValue(record);
-                  const currentKm = currentValue !== '' ? Number(currentValue) : null;
-                  const previousKm = record.PreviousMonthKm;
-                  const diff = currentKm !== null && previousKm !== null ? currentKm - previousKm : null;
-
-                  return (
-                    <tr key={record.VehicleID} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900">{record.Plate}</span>
-                          <button
-                            onClick={() => setHistoryVehicle({ id: record.VehicleID, plate: record.Plate })}
-                            className="text-gray-400 hover:text-blue-600"
-                            title="Geçmiş Kayıtlar"
-                          >
-                            <History className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {record.Make} {record.Model}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {record.CurrentTotalKm.toLocaleString()}
+                {records.map((r) => (
+                  <tr key={r.VehicleID} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-gray-900">{r.Plate}</span>
                         <button
-                          onClick={() => copyCurrentKm(record)}
-                          className="ml-2 text-gray-400 hover:text-blue-600 tooltip"
-                          title="Güncel KM'yi kopyala"
+                          onClick={() => setHistoryVehicle({ id: r.VehicleID, plate: r.Plate })}
+                          className="text-gray-400 hover:text-blue-600"
+                          title="Aylık geçmiş kayıtları"
                         >
-                          <RefreshCw className="h-4 w-4 inline" />
+                          <History className="h-4 w-4" />
                         </button>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {record.PreviousMonthKm ? record.PreviousMonthKm.toLocaleString() : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input
-                          type="number"
-                          value={currentValue}
-                          onChange={(e) => handleKmChange(record.VehicleID, e.target.value)}
-                          className={`block w-32 rounded-md shadow-sm sm:text-sm ${
-                            editedValues[record.VehicleID] !== undefined
-                              ? 'border-blue-500 ring-1 ring-blue-500'
-                              : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                          }`}
-                          placeholder="KM giriniz"
-                        />
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {diff !== null ? (
-                          <span className={diff < 0 ? 'text-red-600' : 'text-green-600'}>
-                            {diff > 0 ? '+' : ''}{diff.toLocaleString()}
-                          </span>
-                        ) : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {record.UpdatedAt ? new Date(record.UpdatedAt).toLocaleDateString() : '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        {r.TrioVehicleId && (
+                          <span className="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded" title={`Trio ID: ${r.TrioVehicleId}`}>Trio</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.Make} {r.Model}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">{fmt(r.CurrentKm)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{fmt(r.StartKm)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{fmt(r.EndKm)}</td>
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${kmColor(r.KmInRange)}`}>
+                      {r.KmInRange != null && r.KmInRange > 0 ? '+' : ''}{fmt(r.KmInRange)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {r.LastReadingDate ? new Date(r.LastReadingDate).toLocaleDateString('tr-TR') : '-'}
+                    </td>
+                  </tr>
+                ))}
+                {!isLoading && records.length === 0 && (
+                  <tr><td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">Bu aralıkta KM kaydı bulunan araç yok.</td></tr>
+                )}
+              </tbody>
+            </table>
+
+            {/* Mobil */}
+            <div className="md:hidden divide-y divide-gray-200">
+              {records.map((r) => (
+                <div key={r.VehicleID} className="p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-medium text-gray-900">{r.Plate}</div>
+                      <div className="text-xs text-gray-500">{r.Make} {r.Model}</div>
+                    </div>
+                    <div className={`text-sm font-semibold ${kmColor(r.KmInRange)}`}>
+                      {r.KmInRange != null && r.KmInRange > 0 ? '+' : ''}{fmt(r.KmInRange)} km
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-500">
+                    <div>Mevcut: <span className="font-semibold text-gray-900">{fmt(r.CurrentKm)}</span></div>
+                    <div>Başı: <span className="text-gray-900">{fmt(r.StartKm)}</span></div>
+                    <div>Sonu: <span className="text-gray-900">{fmt(r.EndKm)}</span></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+            {isLoading && <div className="px-6 py-4 text-center text-sm text-gray-500">Veriler yükleniyor...</div>}
+            <table className="min-w-full divide-y divide-gray-200 hidden md:table">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plaka</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marka / Model</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Şirket</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Depo</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mevcut KM</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trio Bağlantısı</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {records.map((r) => (
+                  <tr key={r.VehicleID} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.Plate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.Make} {r.Model}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.CompanyName || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.DepotName || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{fmt(r.CurrentKm)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {r.TrioVehicleId ? (
+                        <span className="text-green-600">Bağlı</span>
+                      ) : (
+                        <span className="text-red-500">Bağlı değil</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!isLoading && records.length === 0 && (
+                  <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">Bu aralıkta KM verisi alınamayan araç yok. 🎉</td></tr>
+                )}
               </tbody>
             </table>
 
             <div className="md:hidden divide-y divide-gray-200">
-              {records?.map((record) => {
-                const currentValue = getInputValue(record);
-                const currentKm = currentValue !== '' ? Number(currentValue) : null;
-                const previousKm = record.PreviousMonthKm;
-                const diff = currentKm !== null && previousKm !== null ? currentKm - previousKm : null;
-
-                return (
-                  <div key={record.VehicleID} className="p-4 flex flex-col gap-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900">{record.Plate}</span>
-                          <button
-                            onClick={() => setHistoryVehicle({ id: record.VehicleID, plate: record.Plate })}
-                            className="text-gray-400 hover:text-blue-600"
-                            title="Geçmiş Kayıtlar"
-                          >
-                            <History className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {record.Make} {record.Model}
-                        </div>
-                      </div>
-                      <div className="text-right text-xs text-gray-500 space-y-1">
-                        <div>
-                          Mevcut KM:{' '}
-                          <span className="font-semibold text-gray-900">
-                            {record.CurrentTotalKm.toLocaleString()}
-                          </span>
-                        </div>
-                        <div>
-                          Geçen Ay:{' '}
-                          <span className="font-semibold text-gray-900">
-                            {record.PreviousMonthKm ? record.PreviousMonthKm.toLocaleString() : '-'}
-                          </span>
-                        </div>
-                        <div>
-                          Son Güncelleme:{' '}
-                          <span className="font-semibold text-gray-900">
-                            {record.UpdatedAt ? new Date(record.UpdatedAt).toLocaleDateString() : '-'}
-                          </span>
-                        </div>
-                      </div>
+              {records.map((r) => (
+                <div key={r.VehicleID} className="p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-medium text-gray-900">{r.Plate}</div>
+                      <div className="text-xs text-gray-500">{r.Make} {r.Model}</div>
                     </div>
-
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <div className="flex flex-col flex-1">
-                        <span className="text-xs text-gray-500 mb-1">
-                          {month}/{year} KM
-                        </span>
-                        <input
-                          type="number"
-                          value={currentValue}
-                          onChange={(e) => handleKmChange(record.VehicleID, e.target.value)}
-                          className={`block w-full rounded-md shadow-sm text-sm ${
-                            editedValues[record.VehicleID] !== undefined
-                              ? 'border-blue-500 ring-1 ring-blue-500'
-                              : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                          }`}
-                          placeholder="KM giriniz"
-                        />
-                      </div>
-                      <div className="flex flex-col items-end min-w-[4rem]">
-                         <span className="text-xs text-gray-500 mb-1">Fark</span>
-                         {diff !== null ? (
-                          <span className={`text-sm font-medium ${diff < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {diff > 0 ? '+' : ''}{diff.toLocaleString()}
-                          </span>
-                        ) : <span className="text-sm text-gray-400">-</span>}
-                      </div>
-                    </div>
+                    <span className={`text-xs ${r.TrioVehicleId ? 'text-green-600' : 'text-red-500'}`}>
+                      {r.TrioVehicleId ? 'Trio bağlı' : 'Trio yok'}
+                    </span>
                   </div>
-                );
-              })}
+                  <div className="mt-2 text-xs text-gray-500">
+                    {r.CompanyName || '-'} / {r.DepotName || '-'} · Mevcut KM: <span className="font-semibold text-gray-900">{fmt(r.CurrentKm)}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="mt-4">
-            <Pagination
-              currentPage={currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={setCurrentPage}
-              totalItems={pagination.total}
-              itemsPerPage={50}
-            />
-          </div>
-        </>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-          {isMissingLoading && (
-            <div className="px-6 py-4 text-center text-sm text-gray-500">
-              Veriler yükleniyor...
-            </div>
-          )}
-          {!isMissingLoading && missingRecords && (
-            <>
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plaka</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Şirket</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Depo</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mevcut KM</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {missingRecords.map((record) => (
-                    <tr key={record.VehicleID} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.Plate}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.CompanyName || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.DepotName || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.CurrentKm?.toLocaleString() || '-'}</td>
-                    </tr>
-                  ))}
-                  {missingRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">
-                        Bu ay için tüm araçların KM girişi tamamlanmış.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <p className="text-sm text-gray-500">
-                  Toplam {missingRecords.length} araç KM girişi bekliyor.
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+        )}
 
+        <div className="mt-4">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={pagination.total}
+            itemsPerPage={50}
+          />
+        </div>
+      </div>
+
+      {/* Aylık geçmiş modalı */}
       <Modal
         isOpen={!!historyVehicle}
         onClose={() => setHistoryVehicle(null)}
@@ -438,45 +315,29 @@ const MonthlyKmEntry = () => {
               {historyData?.map((item, index) => {
                 const prevItem = historyData[index + 1];
                 const diff = prevItem ? item.Kilometer - prevItem.Kilometer : null;
-
                 return (
                   <tr key={item.LogID} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {item.Month}/{item.Year}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                      {item.Kilometer.toLocaleString()}
-                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{item.Month}/{item.Year}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.Kilometer.toLocaleString()}</td>
                     <td className="px-4 py-3 text-sm">
                       {diff !== null ? (
-                        <span className={diff < 0 ? 'text-red-600' : 'text-green-600'}>
-                          {diff > 0 ? '+' : ''}{diff.toLocaleString()}
-                        </span>
+                        <span className={diff < 0 ? 'text-red-600' : 'text-green-600'}>{diff > 0 ? '+' : ''}{diff.toLocaleString()}</span>
                       ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {item.CreatedByName || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {new Date(item.UpdatedAt).toLocaleDateString('tr-TR')}
-                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{item.CreatedByName || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(item.UpdatedAt).toLocaleDateString('tr-TR')}</td>
                   </tr>
                 );
               })}
               {(!historyData || historyData.length === 0) && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                    Kayıt bulunamadı.
-                  </td>
-                </tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">Kayıt bulunamadı.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Modal>
-    </div>
     </Layout>
   );
 };
 
-export default MonthlyKmEntry;
+export default VehicleKmHistory;

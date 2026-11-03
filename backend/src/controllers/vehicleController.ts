@@ -574,6 +574,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     const companyId = body.companyId ?? body.CompanyID;
     const depotId = body.depotId ?? body.DepotID;
     const managerId = body.managerId ?? body.ManagerID;
+    const trioVehicleId = body.trioVehicleId ?? body.TrioVehicleId;
 
     if (isNaN(Number(id))) {
       res.status(400).json({ error: 'Invalid vehicle ID' });
@@ -654,7 +655,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('CompanyID', sql.Int, elevated ? null : (req.user?.CompanyID || null))
       .input('UserID', sql.Int, req.user?.UserID)
       .query(`
-        SELECT CompanyID, Plate, VIN, CurrentKm FROM Vehicles v
+        SELECT CompanyID, Plate, VIN, CurrentKm, TrioVehicleId FROM Vehicles v
         WHERE VehicleID = @VehicleID
         AND (@CompanyID IS NULL 
           OR v.CompanyID = @CompanyID 
@@ -669,6 +670,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
     const currentPlate = vehicleCheck.recordset[0].Plate;
     const currentVin = vehicleCheck.recordset[0].VIN as string | null;
     const currentCurrentKm = vehicleCheck.recordset[0].CurrentKm as number | null;
+    const currentTrioVehicleId = vehicleCheck.recordset[0].TrioVehicleId as string | null;
 
     if (companyId && companyId !== currentVehicleCompanyId && !elevated) {
       res.status(403).json({ error: 'Only elevated users can change vehicle company' });
@@ -699,6 +701,25 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       }
     }
 
+    // Trio ID: gönderildiyse güncelle (boş string -> NULL), gönderilmediyse mevcut değeri koru
+    let finalTrioVehicleId: string | null = currentTrioVehicleId ?? null;
+    if (trioVehicleId !== undefined) {
+      const trimmedTrio = trioVehicleId === null ? '' : String(trioVehicleId).trim();
+      finalTrioVehicleId = trimmedTrio === '' ? null : trimmedTrio.slice(0, 24);
+    }
+
+    // TrioVehicleId benzersiz olmalı (başka bir araçta kullanılamaz)
+    if (finalTrioVehicleId) {
+      const trioCheck = await pool.request()
+        .input('TrioVehicleId', sql.NVarChar(24), finalTrioVehicleId)
+        .input('VehicleID', sql.Int, Number(id))
+        .query('SELECT VehicleID, Plate FROM Vehicles WHERE TrioVehicleId = @TrioVehicleId AND VehicleID <> @VehicleID');
+      if (trioCheck.recordset.length > 0) {
+        res.status(409).json({ error: `Bu Trio ID başka bir araca kayıtlı: ${trioCheck.recordset[0].Plate}` });
+        return;
+      }
+    }
+
     const request = pool.request()
       .input('VehicleID', sql.Int, Number(id))
       .input('Plate', sql.NVarChar(20), finalPlate)
@@ -718,7 +739,8 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .input('Color', sql.NVarChar(30), color || null)
       .input('RegistrationDate', sql.DateTime, regDate)
       .input('DepotID', sql.Int, Number(depotId) || null)
-      .input('ManagerID', sql.Int, Number(managerId) || null);
+      .input('ManagerID', sql.Int, Number(managerId) || null)
+      .input('TrioVehicleId', sql.NVarChar(24), finalTrioVehicleId);
 
     if (elevated && companyId !== undefined) {
       request.input('CompanyID', sql.Int, companyId || null);
@@ -745,6 +767,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
             RegistrationDate = @RegistrationDate,
             DepotID = @DepotID,
             ManagerID = @ManagerID,
+            TrioVehicleId = @TrioVehicleId,
             UpdatedAt = GETDATE()
         WHERE VehicleID = @VehicleID
       `);

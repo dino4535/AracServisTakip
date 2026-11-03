@@ -39,6 +39,32 @@ export interface MonthlyKmHistoryRecord {
   CreatedByName: string;
 }
 
+export interface KmRangeRecord {
+  VehicleID: number;
+  Plate: string;
+  Make?: string | null;
+  Model?: string | null;
+  CompanyName?: string | null;
+  DepotName?: string | null;
+  CurrentKm: number;
+  TrioVehicleId?: string | null;
+  ReadingCount: number;
+  StartKm: number | null;
+  EndKm: number | null;
+  KmInRange: number | null;
+  LastReadingDate: string | null;
+}
+
+export interface KmRangeParams {
+  startDate?: string;
+  endDate?: string;
+  companyId?: number;
+  search?: string;
+  onlyMissing?: boolean;
+  page?: number;
+  limit?: number;
+}
+
 export const monthlyKmService = {
   getRecords: async (
     month: number,
@@ -94,5 +120,17 @@ export const monthlyKmService = {
       params: { month, year, companyId }
     });
     return response.data;
+  },
+
+  getKmRange: async (
+    params: KmRangeParams
+  ): Promise<PaginatedResponse<KmRangeRecord>> => {
+    const response = await api.get<{ data: KmRangeRecord[]; pagination: any }>('/monthly-km/range', {
+      params: { ...params, onlyMissing: params.onlyMissing ? 1 : 0 }
+    });
+    return {
+      data: response.data.data || [],
+      pagination: response.data.pagination || { total: 0, page: 1, limit: 50, totalPages: 1 }
+    };
   }
 };

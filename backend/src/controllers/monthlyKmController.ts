@@ -621,3 +621,147 @@ export const importMonthlyKm = async (req: AuthRequest, res: Response): Promise<
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+/**
+ * Araç KM Geçmişi: seçilen tarih aralığında her aracın ne kadar KM yaptığını hesaplar.
+ * Kaynak: KmUpdates (gerçek tarihli, append-only geçmiş; Trio senkronu + manuel/import girişleri).
+ * Hesap: "Aralık başındaki son okuma" ile "aralık sonundaki son okuma" farkı (Son - İlk).
+ *   - onlyMissing=1 -> aralıkta HİÇ KmUpdates kaydı olmayan araçlar (KM verisi alınamayanlar)
+ *   - onlyMissing=0 -> aralıkta en az bir kaydı olan araçlar
+ */
+export const getKmRange = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate, companyId, page = 1, limit = 50, search, onlyMissing } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string));
+    const limitNum = Math.max(1, parseInt(limit as string));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Tarih sınırları (varsayılan: içinde bulunulan ayın 1'i .. bugün)
+    const now = new Date();
+    const isoToday = now.toISOString().split('T')[0];
+    const isoMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const startStr = (startDate as string) || isoMonthStart;
+    const endStr = (endDate as string) || isoToday;
+    // Aralık bitişini kapsayıcı yapmak için endDate + 1 gün (UpdateDate < endExcl)
+    const endExclStr = new Date(new Date(endStr).getTime() + 86400000).toISOString().split('T')[0];
+
+    const missing = onlyMissing === '1' || onlyMissing === 'true';
+
+    const pool = await connectDB();
+    const elevated = isElevatedRole(req.user?.Role);
+    const userId = req.user?.UserID;
+    const userCompanyId = req.user?.Role === 'SuperAdmin' ? null : req.user?.CompanyID;
+
+    let whereClause = "WHERE v.Status = 'Active'";
+
+    let userDepotIds: number[] = [];
+    if (!elevated && userId) {
+      const depotResult = await pool.request()
+        .input('UserID', sql.Int, userId)
+        .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
+      userDepotIds = depotResult.recordset
+        .map((row: any) => row.DepotID)
+        .filter((id: any) => id !== null && id !== undefined);
+    }
+
+    if (!elevated) {
+      if (userDepotIds.length > 0) {
+        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
+      } else {
+        const companyConditions: string[] = [];
+        if (userCompanyId) companyConditions.push(`v.CompanyID = @UserCompanyID`);
+        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
+        whereClause += ` AND (${companyConditions.join(' OR ')})`;
+      }
+    }
+
+    if (companyId) {
+      whereClause += ` AND v.CompanyID = @FilterCompanyID`;
+    }
+
+    if (search) {
+      whereClause += ` AND (v.Plate LIKE '%' + @SearchTerm + '%' OR v.Make LIKE '%' + @SearchTerm + '%' OR v.Model LIKE '%' + @SearchTerm + '%')`;
+    }
+
+    // Aralıkta kayıt var/yok filtresi
+    const rangeExists = `SELECT 1 FROM KmUpdates k WHERE k.VehicleID = v.VehicleID AND k.UpdateDate >= @Start AND k.UpdateDate < @EndExcl`;
+    whereClause += missing ? ` AND NOT EXISTS (${rangeExists})` : ` AND EXISTS (${rangeExists})`;
+
+    const baseRequest = () => {
+      const r = pool.request()
+        .input('Start', sql.Date, startStr)
+        .input('EndExcl', sql.Date, endExclStr);
+      if (!elevated) {
+        if (userCompanyId) r.input('UserCompanyID', sql.Int, userCompanyId);
+        if (userId) r.input('UserID', sql.Int, userId);
+      }
+      if (companyId) r.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
+      if (search) r.input('SearchTerm', sql.NVarChar(100), search);
+      return r;
+    };
+
+    const countResult = await baseRequest().query(`
+      SELECT COUNT(*) as total FROM Vehicles v ${whereClause}
+    `);
+    const total = countResult.recordset[0].total as number;
+
+    const dataResult = await baseRequest()
+      .input('Limit', sql.Int, limitNum)
+      .input('Offset', sql.Int, offset)
+      .query(`
+        SELECT
+          v.VehicleID, v.Plate, v.Make, v.Model, v.CurrentKm, v.TrioVehicleId,
+          c.Name as CompanyName,
+          d.Name as DepotName,
+          (SELECT COUNT(*) FROM KmUpdates k WHERE k.VehicleID = v.VehicleID AND k.UpdateDate >= @Start AND k.UpdateDate < @EndExcl) as ReadingCount,
+          (SELECT TOP 1 k.Kilometer FROM KmUpdates k WHERE k.VehicleID = v.VehicleID AND k.UpdateDate < @Start ORDER BY k.UpdateDate DESC) as StartKm,
+          (SELECT TOP 1 k.Kilometer FROM KmUpdates k WHERE k.VehicleID = v.VehicleID AND k.UpdateDate >= @Start AND k.UpdateDate < @EndExcl ORDER BY k.UpdateDate ASC) as FirstKmInRange,
+          (SELECT TOP 1 k.Kilometer FROM KmUpdates k WHERE k.VehicleID = v.VehicleID AND k.UpdateDate < @EndExcl ORDER BY k.UpdateDate DESC) as EndKm,
+          (SELECT TOP 1 k.UpdateDate FROM KmUpdates k WHERE k.VehicleID = v.VehicleID AND k.UpdateDate >= @Start AND k.UpdateDate < @EndExcl ORDER BY k.UpdateDate DESC) as LastReadingDate
+        FROM Vehicles v
+        LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
+        LEFT JOIN Depots d ON v.DepotID = d.DepotID
+        ${whereClause}
+        ORDER BY v.Plate ASC
+        OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+      `);
+
+    const data = (dataResult.recordset as any[]).map((row) => {
+      const endKm = row.EndKm != null ? Number(row.EndKm) : (row.CurrentKm != null ? Number(row.CurrentKm) : null);
+      const baseline = row.StartKm != null ? Number(row.StartKm) : (row.FirstKmInRange != null ? Number(row.FirstKmInRange) : null);
+      let kmInRange: number | null = null;
+      if (!missing && endKm != null && baseline != null) {
+        kmInRange = endKm - baseline;
+      }
+      return {
+        VehicleID: row.VehicleID,
+        Plate: row.Plate,
+        Make: row.Make,
+        Model: row.Model,
+        CompanyName: row.CompanyName,
+        DepotName: row.DepotName,
+        CurrentKm: row.CurrentKm,
+        TrioVehicleId: row.TrioVehicleId,
+        ReadingCount: row.ReadingCount,
+        StartKm: row.StartKm,
+        EndKm: row.EndKm,
+        KmInRange: kmInRange,
+        LastReadingDate: row.LastReadingDate,
+      };
+    });
+
+    res.json({
+      data,
+      range: { startDate: startStr, endDate: endStr, onlyMissing: missing },
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  } catch (error) {
+    console.error('Get KM range error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

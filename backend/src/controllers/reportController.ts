@@ -116,9 +116,11 @@ export const getVehiclePerformance = async (req: AuthRequest, res: Response) => 
                 MIN(Km) as StartKm,
                 MAX(Km) as EndKm
             FROM (
-                SELECT VehicleID, Kilometer as Km FROM FuelRecords
+                SELECT VehicleID, Kilometer as Km FROM FuelRecords WHERE Kilometer > 0
                 UNION ALL
-                SELECT VehicleID, Kilometer as Km FROM KmUpdates
+                SELECT VehicleID, Kilometer as Km FROM KmUpdates WHERE Kilometer > 0
+                UNION ALL
+                SELECT VehicleID, Kilometer as Km FROM MaintenanceRecords WHERE Kilometer > 0
             ) AllKm
             GROUP BY VehicleID
         ),
@@ -223,20 +225,39 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
             WHERE ${accessCondition}
         ),
         AllKmRecords AS (
-            SELECT VehicleID, Kilometer as Km, FuelDate as Date FROM FuelRecords WHERE VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
+            SELECT VehicleID, Kilometer as Km, FuelDate as Date FROM FuelRecords WHERE Kilometer > 0 AND VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
             UNION ALL
-            SELECT VehicleID, Kilometer as Km, UpdateDate as Date FROM KmUpdates WHERE VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
+            SELECT VehicleID, Kilometer as Km, UpdateDate as Date FROM KmUpdates WHERE Kilometer > 0 AND VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
             UNION ALL
-            SELECT VehicleID, Kilometer as Km, ServiceDate as Date FROM MaintenanceRecords WHERE VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
+            SELECT VehicleID, Kilometer as Km, ServiceDate as Date FROM MaintenanceRecords WHERE Kilometer > 0 AND VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
+        ),
+        MonthlyEndReading AS (
+            SELECT VehicleID, Month, EndKm
+            FROM (
+                SELECT VehicleID, FORMAT(Date, 'yyyy-MM') as Month, Km as EndKm,
+                       ROW_NUMBER() OVER (PARTITION BY VehicleID, FORMAT(Date, 'yyyy-MM') ORDER BY Date DESC, Km DESC) as rn
+                FROM AllKmRecords
+                WHERE Date >= DATEADD(month, -12, GETDATE())
+            ) ranked
+            WHERE rn = 1
+        ),
+        MonthlyFirstReading AS (
+            SELECT VehicleID, Month, FirstKm
+            FROM (
+                SELECT VehicleID, FORMAT(Date, 'yyyy-MM') as Month, Km as FirstKm,
+                       ROW_NUMBER() OVER (PARTITION BY VehicleID, FORMAT(Date, 'yyyy-MM') ORDER BY Date ASC, Km ASC) as rn
+                FROM AllKmRecords
+                WHERE Date >= DATEADD(month, -12, GETDATE())
+            ) ranked2
+            WHERE rn = 1
         ),
         MonthlyVehicleStats AS (
-            SELECT 
-                VehicleID,
-                FORMAT(Date, 'yyyy-MM') as Month,
-                MAX(Km) - MIN(Km) as Distance
-            FROM AllKmRecords
-            WHERE Date >= DATEADD(month, -12, GETDATE())
-            GROUP BY VehicleID, FORMAT(Date, 'yyyy-MM')
+            SELECT
+                e.VehicleID,
+                e.Month,
+                CASE WHEN e.EndKm > f.FirstKm THEN e.EndKm - f.FirstKm ELSE 0 END as Distance
+            FROM MonthlyEndReading e
+            JOIN MonthlyFirstReading f ON e.VehicleID = f.VehicleID AND e.Month = f.Month
         ),
         MonthlyTotalDistance AS (
             SELECT Month, SUM(Distance) as TotalDistance
@@ -391,33 +412,33 @@ export const getDetailedReport = async (req: AuthRequest, res: Response) => {
         GROUP BY VehicleID
       ),
       AllKm AS (
-        SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords
+        SELECT VehicleID, FuelDate as Date, Kilometer as Km FROM FuelRecords WHERE Kilometer > 0
         UNION ALL
-        SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates
+        SELECT VehicleID, UpdateDate as Date, Kilometer as Km FROM KmUpdates WHERE Kilometer > 0
         UNION ALL
-        SELECT VehicleID, ServiceDate as Date, Kilometer as Km FROM MaintenanceRecords
+        SELECT VehicleID, ServiceDate as Date, Kilometer as Km FROM MaintenanceRecords WHERE Kilometer > 0
       ),
       KmStats AS (
         SELECT 
           v.VehicleID,
           CASE 
-            WHEN e.EndKm > ISNULL(s.StartKm, 0) 
-              THEN e.EndKm - ISNULL(s.StartKm, 0) 
+            WHEN e.EndKm > f.FirstKm 
+              THEN e.EndKm - f.FirstKm 
             ELSE 0 
           END as TotalKm
         FROM Vehicles v
         OUTER APPLY (
-          SELECT TOP 1 Km as StartKm
-          FROM AllKm ak
-          WHERE ak.VehicleID = v.VehicleID AND ak.Date < @StartDate
-          ORDER BY ak.Date DESC
-        ) s
-        OUTER APPLY (
           SELECT TOP 1 Km as EndKm
           FROM AllKm ak
-          WHERE ak.VehicleID = v.VehicleID AND ak.Date <= @EndDate
+          WHERE ak.VehicleID = v.VehicleID AND ak.Date >= @StartDate AND ak.Date <= @EndDate
           ORDER BY ak.Date DESC
         ) e
+        OUTER APPLY (
+          SELECT TOP 1 Km as FirstKm
+          FROM AllKm ak
+          WHERE ak.VehicleID = v.VehicleID AND ak.Date >= @StartDate AND ak.Date <= @EndDate
+          ORDER BY ak.Date ASC
+        ) f
       )
       SELECT 
         v.VehicleID,

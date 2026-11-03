@@ -32,6 +32,11 @@ frontend/dist/
 Thumbs.db
 
 ############################
+# Çalışma zamanı logları
+############################
+backend/logs/
+
+############################
 # Büyük veri / dış kaynak dosyaları
 ############################
 *.xlsx

@@ -635,6 +635,27 @@ const ServiceRequests = () => {
                 min={0}
                 required
               />
+              {(() => {
+                const veh = Array.isArray(vehicles) ? vehicles.find(v => v.VehicleID === formData.VehicleID) : undefined;
+                if (!veh) return null;
+                const lastKm = veh.LastServiceKm ?? null;
+                const entered = parseInt(formCurrentKm, 10);
+                const since = lastKm != null && !isNaN(entered) ? entered - lastKm : null;
+                return (
+                  <p className="text-xs mt-1 text-neutral-500">
+                    {lastKm != null ? (
+                      <>
+                        Son servis: <span className="font-semibold text-neutral-700">{lastKm.toLocaleString()} km</span>
+                        {since != null && since >= 0 && (
+                          <> · üzerinden <span className="font-semibold text-blue-600">{since.toLocaleString()} km</span> geçti</>
+                        )}
+                      </>
+                    ) : (
+                      'Önceki servis kaydı bulunmuyor.'
+                    )}
+                  </p>
+                );
+              })()}
             </div>
 
             <div className="col-span-1">

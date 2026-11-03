@@ -3,13 +3,14 @@ import Layout from '../components/layout/Layout';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
-import { Users, Shield, Plus, Edit, Trash2, CheckCircle, XCircle, MapPin, FileText, Building, Send } from 'lucide-react';
+import { Users, Shield, Plus, Edit, Trash2, CheckCircle, XCircle, MapPin, FileText, Building, Send, Radio } from 'lucide-react';
 import { userService } from '../services/userService';
 import { adminService } from '../services/adminService';
 import { PERMISSIONS } from '../hooks/usePermissions';
 import PermissionGuard from '../utils/PermissionGuard';
 import AuditLogs from '../components/admin/AuditLogs';
 import OpetSettings from '../components/admin/OpetSettings';
+import TrioSettings from '../components/admin/TrioSettings';
 import JobEmailSettings from '../components/admin/JobEmailSettings';
 import RiskSettings from '../components/admin/RiskSettings';
 import { Company, Depot, ServiceCompany, InsuranceCompany } from '../types';
@@ -46,7 +47,7 @@ interface Permission {
 const Admin = () => {
  
   const [activeTab, setActiveTab] = useState<
-    'users' | 'roles' | 'depots' | 'serviceCompanies' | 'insuranceCompanies' | 'auditLogs' | 'opetSettings' | 'jobEmailSettings' | 'riskSettings'
+    'users' | 'roles' | 'depots' | 'serviceCompanies' | 'insuranceCompanies' | 'auditLogs' | 'opetSettings' | 'trioSettings' | 'jobEmailSettings' | 'riskSettings'
   >('users');
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -649,6 +650,17 @@ const Admin = () => {
               Opet Ayarları
             </button>
             <button
+              onClick={() => setActiveTab('trioSettings')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'trioSettings'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+              }`}
+            >
+              <Radio className="w-4 h-4 inline mr-2" />
+              Trio Ayarları
+            </button>
+            <button
               onClick={() => setActiveTab('jobEmailSettings')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'jobEmailSettings'
@@ -674,6 +686,7 @@ const Admin = () => {
         </div>
 
         {activeTab === 'opetSettings' && <OpetSettings />}
+        {activeTab === 'trioSettings' && <TrioSettings />}
         {activeTab === 'jobEmailSettings' && <JobEmailSettings />}
         {activeTab === 'riskSettings' && <RiskSettings />}
 

@@ -344,6 +344,7 @@ const Vehicles = () => {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Yönetici</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">KM</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Son Servis KM</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Trio ID</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Risk</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">Durum</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-neutral-700">İşlemler</th>
@@ -370,6 +371,15 @@ const Vehicles = () => {
                   <td className="px-6 py-4 text-sm text-neutral-600">{formatKm(vehicle.CurrentKm)}</td>
                   <td className="px-6 py-4 text-sm text-neutral-600">
                     {vehicle.LastServiceKm ? formatKm(vehicle.LastServiceKm) : '-'}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-neutral-500">
+                    {vehicle.TrioVehicleId ? (
+                      <span className="font-mono text-xs bg-neutral-100 px-2 py-1 rounded" title={vehicle.TrioVehicleId}>
+                        {vehicle.TrioVehicleId}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-400 text-xs">-</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 overflow-visible">
                     {vehicle.RiskScore !== undefined ? (
@@ -695,6 +705,18 @@ const Vehicles = () => {
                 <option value="Retired">Emekli</option>
                 <option value="Sold">Satıldı</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">Trio ID</label>
+              <input
+                type="text"
+                value={formData.TrioVehicleId || ''}
+                onChange={(e) => setFormData({ ...formData, TrioVehicleId: e.target.value || null })}
+                className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                placeholder="Trio araç _id (boş bırakılırsa bağlantı kaldırılır)"
+                maxLength={24}
+              />
+              <p className="text-xs text-neutral-400 mt-1">Trio GPS cihaz kimliği. KM senkronu bu ID ile eşleşir.</p>
             </div>
           </div>
 

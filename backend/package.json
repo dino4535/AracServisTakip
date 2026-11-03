@@ -9,6 +9,10 @@
     "start": "node dist/server.js",
     "migrate": "tsx src/database/migrate.ts",
     "seed": "tsx src/database/seed.ts",
+    "migrate:trio": "tsx src/database/run_migration_023_trio_vehicle_id.ts",
+    "trio:test": "tsx src/scripts/testTrioApi.ts",
+    "trio:link": "tsx src/scripts/linkTrioVehicles.ts",
+    "trio:sync": "tsx src/scripts/runTrioSync.ts",
     "lint": "eslint . --ext .ts"
   },
   "keywords": [

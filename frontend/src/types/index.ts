@@ -58,6 +58,7 @@ export interface Vehicle {
   RiskScore?: number;
   RiskCategory?: 'Green' | 'Yellow' | 'Red';
   RiskDetails?: string;
+  TrioVehicleId?: string | null;
 }
 
 export interface MaintenanceRecord {

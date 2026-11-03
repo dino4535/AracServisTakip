@@ -8,6 +8,7 @@ import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { startReminderCron } from './scheduledJobs/reminderCron';
 import { initOpetCron } from './scheduledJobs/opetCron';
+import { initTrioCron } from './scheduledJobs/trioCron';
 import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
@@ -28,6 +29,7 @@ app.use(helmet());
 
 app.use(cors({
   origin: [
+    'http://localhost:4010',
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
@@ -68,6 +70,7 @@ const startServer = async () => {
     
     startReminderCron();
     initOpetCron();
+    initTrioCron();
     
     httpServer.listen(PORT, () => {
       logger.info(`🚀 Server is running on port ${PORT}`);
