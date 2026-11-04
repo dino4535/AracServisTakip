@@ -485,7 +485,7 @@ const Reports = () => {
         </div>
 
         {/* Trend Analysis Row */}
-        <h3 className="text-lg font-semibold text-neutral-900 pt-4">Trend Analizi (Son 12 Ay)</h3>
+        <h3 className="text-lg font-semibold text-neutral-900 pt-4">Trend Analizi (Son 6 Ay)</h3>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Avg Consumption Trend */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">

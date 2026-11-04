@@ -14,6 +14,7 @@
     "trio:test": "tsx src/scripts/testTrioApi.ts",
     "trio:link": "tsx src/scripts/linkTrioVehicles.ts",
     "trio:sync": "tsx src/scripts/runTrioSync.ts",
+    "trio:backfill": "tsx src/scripts/backfillTrioHistory.ts",
     "lint": "eslint . --ext .ts"
   },
   "keywords": [

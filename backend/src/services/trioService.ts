@@ -198,6 +198,45 @@ class TrioService {
     return out;
   }
 
+  /**
+   * CAN bus history raporundan, verilen [since,until) aralığındaki İLK (ASC) veya SON (DESC)
+   * mutlak odometer okumasını döner. `totalVehicleDistance` METRE -> /1000 km.
+   * Geçmiş aylık KM backfill'i için kullanılır (ay içi ilk/son -> aylık mesafe).
+   * NOT: canbus/history TEK araç kabul eder (çoklu id yok) ve `_limit>500` için `measurement.key` şart.
+   */
+  async getCanbusOdometerEdge(
+    vehicleId: string,
+    sinceIso: string,
+    untilIso: string,
+    order: 'ASC' | 'DESC',
+    retries = 4
+  ): Promise<TrioOdometer | null> {
+    const url = `${BASE_URL}/reports/vehicle/canbus/history?vehicleId=${vehicleId}`
+      + `&ts.since=${sinceIso}&ts.until=${untilIso}`
+      + `&measurement.key=totalVehicleDistance&_sortOrder=${order}&_limit=1`;
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const body = (await this.getJson(url)).body;
+        if (!Array.isArray(body) || body.length === 0) return null; // veri yok (hata değil)
+        const row = body[0];
+        if (!Array.isArray(row?.measurement)) return null;
+        const m = row.measurement.find((x: any) => x?.key === 'totalVehicleDistance');
+        if (!m || typeof m.value !== 'number') return null;
+        return { km: Math.round(m.value / 1000), ts: row.ts };
+      } catch (err) {
+        lastErr = err as Error;
+        const status = Number(/failed:\s*(\d{3})/.exec(lastErr.message)?.[1] || 0);
+        const permanent = status >= 400 && status < 500 && status !== 429 && status !== 403;
+        if (permanent || attempt === retries - 1) break; // 400 gibi kalıcı hatada boşuna deneme
+        const base = (status === 429 || status === 403) ? 3000 : 900; // rate-limit -> daha uzun bekle
+        await new Promise(r => setTimeout(r, base * Math.pow(2, attempt)));
+      }
+    }
+    console.error(`⚠️  canbus/history (${order} ${sinceIso}) alınamadı [${vehicleId}]:`, lastErr?.message);
+    return null;
+  }
+
   /** MonthlyKmLog.CreatedBy NOT NULL olduğu için sistem senkronu adına kullanılacak kullanıcıyı bulur. */
   private async getSystemUserId(pool: sql.ConnectionPool): Promise<number | null> {
     const envId = process.env.TRIO_SYNC_USER_ID;

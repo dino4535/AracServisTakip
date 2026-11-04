@@ -237,7 +237,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 SELECT VehicleID, FORMAT(Date, 'yyyy-MM') as Month, Km as EndKm,
                        ROW_NUMBER() OVER (PARTITION BY VehicleID, FORMAT(Date, 'yyyy-MM') ORDER BY Date DESC, Km DESC) as rn
                 FROM AllKmRecords
-                WHERE Date >= DATEADD(month, -12, GETDATE())
+                WHERE Date >= DATEADD(month, -6, GETDATE())
             ) ranked
             WHERE rn = 1
         ),
@@ -247,7 +247,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 SELECT VehicleID, FORMAT(Date, 'yyyy-MM') as Month, Km as FirstKm,
                        ROW_NUMBER() OVER (PARTITION BY VehicleID, FORMAT(Date, 'yyyy-MM') ORDER BY Date ASC, Km ASC) as rn
                 FROM AllKmRecords
-                WHERE Date >= DATEADD(month, -12, GETDATE())
+                WHERE Date >= DATEADD(month, -6, GETDATE())
             ) ranked2
             WHERE rn = 1
         ),
@@ -270,7 +270,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 SUM(Liters) as TotalLiters,
                 SUM(TotalCost) as FuelCost
             FROM FuelRecords
-            WHERE FuelDate >= DATEADD(month, -12, GETDATE())
+            WHERE FuelDate >= DATEADD(month, -6, GETDATE())
             AND VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
             GROUP BY FORMAT(FuelDate, 'yyyy-MM')
         ),
@@ -291,7 +291,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 UNION ALL
                 SELECT AccidentDate as Date, Cost FROM AccidentRecords WHERE VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
             ) AllCosts
-            WHERE Date >= DATEADD(month, -12, GETDATE())
+            WHERE Date >= DATEADD(month, -6, GETDATE())
             GROUP BY FORMAT(Date, 'yyyy-MM')
         )
         SELECT 
