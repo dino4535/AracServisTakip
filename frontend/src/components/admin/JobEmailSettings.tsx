@@ -5,6 +5,11 @@ import { Save, AlertCircle, CheckCircle, Play, Clock, Send } from 'lucide-react'
 
 type Message = { type: 'success' | 'error'; text: string } | null;
 
+// Backend (reminderCron.isSettingEnabled) ile aynı yorum: 'false'/'0'/'off'/'no' kapalı demek,
+// diğer tüm değerler (anahtar dahil yoksa) açık sayılır.
+const parseEnabled = (raw: string): boolean =>
+  !['false', '0', 'off', 'no'].includes((raw || '').trim().toLowerCase());
+
 const JobEmailSettings = () => {
   const [loading, setLoading] = useState(false);
   const [triggerLoading, setTriggerLoading] = useState(false);
@@ -36,9 +41,9 @@ const JobEmailSettings = () => {
         safeGetSetting('job_reminder_schedule'),
       ]);
 
-      setInspectionReminderEmails(inspectionReminder !== 'false');
-      setInspectionOverdueEmails(inspectionOverdue !== 'false');
-      setInsuranceReminderEmails(insuranceReminder !== 'false');
+      setInspectionReminderEmails(parseEnabled(inspectionReminder));
+      setInspectionOverdueEmails(parseEnabled(inspectionOverdue));
+      setInsuranceReminderEmails(parseEnabled(insuranceReminder));
       setScheduleTime(schedule && schedule !== 'true' ? schedule : '09:00');
     } catch (error) {
       console.error('Error fetching job email settings:', error);
@@ -192,10 +197,10 @@ const JobEmailSettings = () => {
         <div className="border-b pb-4">
           <h3 className="text-lg font-medium mb-3 flex items-center">
             <Clock size={20} className="mr-2 text-neutral-500" />
-            Otomatik Çalışma Zamanı
+            Otomatik Çalışma Zamanı (Haftalık · Pazar)
           </h3>
           <p className="text-sm text-neutral-600 mb-3">
-            Sistemin otomatik olarak hatırlatma maillerini göndereceği saati belirleyin. (Bu ayar Pazar günleri için geçerlidir.)
+            Hatırlatma job'ı <strong>her hafta Pazar günü</strong> yalnızca aşağıdaki saatte çalışır; gün değiştirilemez.
           </p>
           <div className="flex items-center">
             <input

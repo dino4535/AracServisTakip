@@ -3,12 +3,18 @@ import sql from 'mssql';
 import { sendEmail } from './emailService';
 import { getTurkeyNow } from '../utils/time';
 
+export interface CreateNotificationOptions {
+  // Çağıran taraf kendi zengin e-postasını gönderiyorsa otomatik bildirimi kapatır (çift mail önlenir)
+  skipEmail?: boolean;
+}
+
 export const createNotification = async (
   userId: number,
   type: string,
   title: string,
   message: string,
-  relatedId?: number
+  relatedId?: number,
+  options?: CreateNotificationOptions
 ): Promise<void> => {
   try {
     const pool = await connectDB();
@@ -38,7 +44,7 @@ export const createNotification = async (
       'SERVICE_REQUEST_APPROVED_MANAGER',
     ];
 
-    if (process.env.EMAIL_HOST && !emailDisabledTypes.includes(type)) {
+    if (!options?.skipEmail && process.env.EMAIL_HOST && !emailDisabledTypes.includes(type)) {
       const userResult = await pool.request()
         .input('UserID', sql.Int, userId)
         .query('SELECT Email, Name, Surname FROM Users WHERE UserID = @UserID');

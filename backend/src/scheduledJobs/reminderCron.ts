@@ -8,6 +8,14 @@ import { logAudit } from '../services/auditService';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// SystemSettings değerleri 'false'/'0'/'off'/'no' (büyük-küçük harf ve boşluğa duyarsız) ise kapalı sayılır.
+// Anahtar hiç yoksa varsayılan olarak açıktır.
+const isSettingEnabled = (raw: string | undefined): boolean => {
+  if (raw == null) return true;
+  const v = raw.trim().toLowerCase();
+  return !['false', '0', 'off', 'no'].includes(v);
+};
+
 const getJobEmailSettings = async (pool: sql.ConnectionPool) => {
   const result = await pool
     .request()
@@ -21,9 +29,9 @@ const getJobEmailSettings = async (pool: sql.ConnectionPool) => {
   }
 
   return {
-    inspectionReminderEmails: map['job_inspection_reminder_emails'] !== 'false',
-    inspectionOverdueEmails: map['job_inspection_overdue_emails'] !== 'false',
-    insuranceReminderEmails: map['job_insurance_reminder_emails'] !== 'false',
+    inspectionReminderEmails: isSettingEnabled(map['job_inspection_reminder_emails']),
+    inspectionOverdueEmails: isSettingEnabled(map['job_inspection_overdue_emails']),
+    insuranceReminderEmails: isSettingEnabled(map['job_insurance_reminder_emails']),
   };
 };
 
@@ -102,7 +110,8 @@ const checkInspectionReminders = async () => {
             'INSPECTION_REMINDER',
             'Muayene Hatırlatması',
             message,
-            record.InspectionID
+            record.InspectionID,
+            { skipEmail: true } // maili aşağıda kendimiz gönderiyoruz (çift mail önlenir)
           );
           if (record.ManagerEmail) {
             const success = await sendEmail(record.ManagerEmail, 'Muayene Hatırlatması', message);
@@ -163,7 +172,7 @@ const checkInspectionReminders = async () => {
         `;
 
         for (const admin of admins) {
-            await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Haftalık Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined);
+            await createNotification(admin.UserID, 'BULK_INSPECTION_REMINDER', 'Haftalık Muayene Raporu', `${inspections.length} aracın muayenesi yaklaşıyor.`, undefined, { skipEmail: true });
             const success = await sendEmail(admin.Email, `${companyName} - Haftalık Muayene Hatırlatmaları`, htmlTable);
             await delay(2000); // Prevent SMTP rate limiting
             await logAudit(
@@ -286,7 +295,8 @@ const checkInspectionOverdue = async () => {
           'BULK_INSPECTION_OVERDUE',
           'Vizesi Geçmiş Araçlar',
           `${records.length} aracın muayene vizesi geçmiştir.`,
-          undefined
+          undefined,
+          { skipEmail: true } // maili aşağıda tablo olarak kendimiz gönderiyoruz
         );
         const success = await sendEmail(
           admin.Email,
@@ -428,7 +438,8 @@ const checkInsuranceReminders = async () => {
           'BULK_INSURANCE_REMINDER',
           'Haftalık Sigorta Raporu',
           `${records.length} aracın sigortası bitiyor.`,
-          undefined
+          undefined,
+          { skipEmail: true } // maili aşağıda tablo olarak kendimiz gönderiyoruz
         );
         const success = await sendEmail(admin.Email, subject, htmlContent);
         await delay(2000); // Prevent SMTP rate limiting
