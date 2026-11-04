@@ -193,6 +193,9 @@ export const getVehiclePerformance = async (req: AuthRequest, res: Response) => 
 };
 
 export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
+  // "Son 6 ay"ı ay başına hizala: içinde bulunulan ayın başından 5 ay geri = 6 tam ay
+  // (örn. Kasım'da 1 Haziran). Ay ortasında başlayan pencere ilk ayı kesip ~0 gösterirdi.
+  const SIX_MONTH_START = "DATEADD(month, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))";
   try {
     const pool = await connectDB();
     const elevated = isElevatedRole(req.user?.Role);
@@ -237,7 +240,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 SELECT VehicleID, FORMAT(Date, 'yyyy-MM') as Month, Km as EndKm,
                        ROW_NUMBER() OVER (PARTITION BY VehicleID, FORMAT(Date, 'yyyy-MM') ORDER BY Date DESC, Km DESC) as rn
                 FROM AllKmRecords
-                WHERE Date >= DATEADD(month, -6, GETDATE())
+                WHERE Date >= ${SIX_MONTH_START}
             ) ranked
             WHERE rn = 1
         ),
@@ -247,7 +250,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 SELECT VehicleID, FORMAT(Date, 'yyyy-MM') as Month, Km as FirstKm,
                        ROW_NUMBER() OVER (PARTITION BY VehicleID, FORMAT(Date, 'yyyy-MM') ORDER BY Date ASC, Km ASC) as rn
                 FROM AllKmRecords
-                WHERE Date >= DATEADD(month, -6, GETDATE())
+                WHERE Date >= ${SIX_MONTH_START}
             ) ranked2
             WHERE rn = 1
         ),
@@ -270,7 +273,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 SUM(Liters) as TotalLiters,
                 SUM(TotalCost) as FuelCost
             FROM FuelRecords
-            WHERE FuelDate >= DATEADD(month, -6, GETDATE())
+            WHERE FuelDate >= ${SIX_MONTH_START}
             AND VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
             GROUP BY FORMAT(FuelDate, 'yyyy-MM')
         ),
@@ -291,7 +294,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
                 UNION ALL
                 SELECT AccidentDate as Date, Cost FROM AccidentRecords WHERE VehicleID IN (SELECT VehicleID FROM AllowedVehicles)
             ) AllCosts
-            WHERE Date >= DATEADD(month, -6, GETDATE())
+            WHERE Date >= ${SIX_MONTH_START}
             GROUP BY FORMAT(Date, 'yyyy-MM')
         )
         SELECT 
