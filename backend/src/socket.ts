@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import logger from './utils/logger';
+import { verifyToken } from './utils/jwt';
 
 let io: Server;
 
@@ -17,6 +18,20 @@ export const initSocket = (httpServer: HttpServer) => {
       ],
       methods: ['GET', 'POST'],
       credentials: true
+    }
+  });
+
+  // Kimliksiz socket bağlantısını engelle: handshake'te JWT doğrula
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token as string | undefined;
+    if (!token) {
+      return next(new Error('unauthorized'));
+    }
+    try {
+      verifyToken(token);
+      next();
+    } catch {
+      next(new Error('unauthorized'));
     }
   });
 

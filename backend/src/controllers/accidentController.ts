@@ -7,7 +7,7 @@ import { accidentSchema } from '../schemas/accidentSchema';
 import { logAudit } from '../services/auditService';
 import { createNotification } from '../services/notificationService';
 import { sendEmail } from '../services/emailService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 export const getAllAccidents = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -25,7 +25,7 @@ export const getAllAccidents = async (req: AuthRequest, res: Response): Promise<
     if (!elevated) {
       whereClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
     } else {
-      whereClause += ` AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+      whereClause += ` AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
     }
 
     if (vehicleId) {
@@ -132,7 +132,7 @@ export const getAccidentById = async (req: AuthRequest, res: Response): Promise<
         LEFT JOIN Vehicles v ON a.VehicleID = v.VehicleID
         LEFT JOIN Users u ON a.DriverID = u.UserID
         WHERE a.AccidentID = @AccidentID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (result.recordset.length === 0) {
@@ -172,7 +172,7 @@ export const createAccident = async (req: AuthRequest, res: Response): Promise<v
       .query(`
         SELECT CompanyID FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
       
     if (vehicleCheck.recordset.length === 0) {
@@ -309,9 +309,7 @@ export const updateAccident = async (req: AuthRequest, res: Response): Promise<v
         FROM AccidentRecords a
         JOIN Vehicles v ON a.VehicleID = v.VehicleID
         WHERE a.AccidentID = @AccidentID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -434,9 +432,7 @@ export const deleteAccident = async (req: AuthRequest, res: Response): Promise<v
         FROM AccidentRecords a
         JOIN Vehicles v ON a.VehicleID = v.VehicleID
         WHERE a.AccidentID = @AccidentID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (check.recordset.length === 0) {
@@ -482,9 +478,7 @@ export const uploadAccidentFile = async (req: AuthRequest, res: Response): Promi
         FROM AccidentRecords a
         JOIN Vehicles v ON a.VehicleID = v.VehicleID
         WHERE a.AccidentID = @AccidentID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (check.recordset.length === 0) {
@@ -540,9 +534,7 @@ export const getAccidentFiles = async (req: AuthRequest, res: Response): Promise
         FROM AccidentRecords a
         JOIN Vehicles v ON a.VehicleID = v.VehicleID
         WHERE a.AccidentID = @AccidentID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (check.recordset.length === 0) {

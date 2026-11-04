@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { register, login, getProfile, getPermissions, forgotPassword, resetPassword } from '../controllers/authController';
-import { authenticate } from '../middleware/auth';
-import { loginLimiter } from '../middleware/rateLimiter';
+import { authenticate, authorizeRole } from '../middleware/auth';
+import { loginLimiter, passwordResetLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -44,7 +44,7 @@ const router = Router();
  *       400:
  *         description: Geçersiz veri veya e-posta kullanımda
  */
-router.post('/register', register);
+router.post('/register', authenticate, authorizeRole(['ADMIN']), register);
 
 /**
  * @swagger
@@ -132,7 +132,7 @@ router.get('/permissions', authenticate, getPermissions);
  *       200:
  *         description: Eğer e-posta kayıtlıysa şifre sıfırlama bağlantısı gönderilir
  */
-router.post('/forgot-password', forgotPassword);
+router.post('/forgot-password', passwordResetLimiter, forgotPassword);
 
 /**
  * @swagger
@@ -160,6 +160,6 @@ router.post('/forgot-password', forgotPassword);
  *       400:
  *         description: Geçersiz veya süresi dolmuş bağlantı
  */
-router.post('/reset-password', resetPassword);
+router.post('/reset-password', passwordResetLimiter, resetPassword);
 
 export default router;

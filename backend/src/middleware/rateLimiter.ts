@@ -21,3 +21,15 @@ export const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Şifre sıfırlama istekleri e-posta gönderir → sıkı limit (e-posta bombası / SMTP kota tükenmesi engeli)
+export const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Limit each IP to 5 reset requests per hour
+  message: {
+    status: 429,
+    message: 'Too many password reset attempts from this IP, please try again after an hour',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

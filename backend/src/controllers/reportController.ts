@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -27,7 +27,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 
@@ -102,7 +102,7 @@ export const getVehiclePerformance = async (req: AuthRequest, res: Response) => 
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 
@@ -218,7 +218,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 

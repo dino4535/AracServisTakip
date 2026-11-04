@@ -4,7 +4,7 @@ import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { maintenanceSchema } from '../schemas/maintenanceSchema';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 import { syncVehicleMaintenanceKm } from '../utils/vehicleMaintenance';
 
 export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -142,7 +142,7 @@ export const getMaintenanceById = async (req: AuthRequest, res: Response): Promi
         LEFT JOIN Vehicles v ON m.VehicleID = v.VehicleID
         LEFT JOIN Users u ON m.CreatedBy = u.UserID
         WHERE m.MaintenanceID = @MaintenanceID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (result.recordset.length === 0) {
@@ -179,7 +179,7 @@ export const createMaintenanceRecord = async (req: AuthRequest, res: Response): 
       .query(`
         SELECT 1 FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
       
     if (vehicleCheck.recordset.length === 0) {
@@ -242,9 +242,7 @@ export const updateMaintenanceRecord = async (req: AuthRequest, res: Response): 
         FROM MaintenanceRecords m
         JOIN Vehicles v ON m.VehicleID = v.VehicleID
         WHERE m.MaintenanceID = @MaintenanceID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -307,9 +305,7 @@ export const deleteMaintenanceRecord = async (req: AuthRequest, res: Response): 
         FROM MaintenanceRecords m
         JOIN Vehicles v ON m.VehicleID = v.VehicleID
         WHERE m.MaintenanceID = @MaintenanceID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {

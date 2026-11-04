@@ -140,6 +140,23 @@ export const getUserById = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
+// Elevated olmayan çağırıcılar elevated rol (ADMIN/SUPERADMIN) atayamaz → dikey yetki escalation engeli.
+const assertCanAssignRoles = async (
+  pool: sql.ConnectionPool,
+  roleIds: unknown,
+  callerRole?: string
+): Promise<string | null> => {
+  if (isElevatedRole(callerRole)) return null;
+  const ids = Array.isArray(roleIds)
+    ? [...new Set(roleIds.map((r: unknown) => Number(r)).filter((n: number) => Number.isInteger(n) && n > 0))]
+    : [];
+  if (ids.length === 0) return null;
+  const r = await pool
+    .request()
+    .query(`SELECT COUNT(*) AS C FROM Roles WHERE RoleID IN (${ids.join(',')}) AND LOWER(LTRIM(RTRIM(Name))) IN ('admin', 'superadmin')`);
+  return r.recordset[0].C > 0 ? 'Elevated roles can only be assigned by an administrator' : null;
+};
+
 export const createUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { name, surname, email, password, companyId, managerId, roleIds, companyIds } = req.body;
@@ -158,6 +175,12 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
 
     if (existingEmail.recordset.length > 0) {
       res.status(400).json({ error: 'Email already exists' });
+      return;
+    }
+
+    const roleAssignError = await assertCanAssignRoles(pool, roleIds, req.user?.Role);
+    if (roleAssignError) {
+      res.status(403).json({ error: roleAssignError });
       return;
     }
 
@@ -254,6 +277,12 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
         res.status(400).json({ error: 'Email already exists' });
         return;
       }
+    }
+
+    const roleAssignError = await assertCanAssignRoles(pool, roleIds, req.user?.Role);
+    if (roleAssignError) {
+      res.status(403).json({ error: roleAssignError });
+      return;
     }
 
     const transaction = new sql.Transaction(pool);

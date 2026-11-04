@@ -8,7 +8,7 @@ import { insuranceSchema } from '../schemas/insuranceSchema';
 import { fuelSchema } from '../schemas/fuelSchema';
 import { hashPassword } from '../utils/password';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 export const downloadTemplate = async (req: AuthRequest, res: Response) => {
   try {
@@ -91,7 +91,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             LEFT JOIN Depots d ON v.DepotID = d.DepotID
             LEFT JOIN Users m ON v.ManagerID = m.UserID
             LEFT JOIN Users dr ON v.AssignedDriverID = dr.UserID
-            WHERE (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
           `);
         data = vehicles.recordset;
         filename = 'vehicles_export.xlsx';
@@ -113,7 +113,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
               i.Notes as 'Description'
             FROM InsuranceRecords i
             JOIN Vehicles v ON i.VehicleID = v.VehicleID
-            WHERE (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
           `);
         data = insurance.recordset;
         filename = 'insurance_export.xlsx';
@@ -143,7 +143,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
             LEFT JOIN Depots d ON v.DepotID = d.DepotID
             LEFT JOIN Users u ON f.FilledBy = u.UserID
-            WHERE (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
           `);
         data = fuel.recordset;
         filename = 'fuel_export.xlsx';
@@ -164,7 +164,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             JOIN UserRoles ur ON u.UserID = ur.UserID
             JOIN Roles r ON ur.RoleID = r.RoleID
             WHERE r.Name = 'Driver'
-            AND (@CompanyID IS NULL OR u.CompanyID = @CompanyID OR u.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+            AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'u')}
           `);
         data = drivers.recordset;
         filename = 'drivers_export.xlsx';
@@ -180,7 +180,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
               dr.Email as 'DriverEmail'
             FROM Vehicles v
             LEFT JOIN Users dr ON v.AssignedDriverID = dr.UserID
-            WHERE (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
           `);
         data = driverMapping.recordset;
         filename = 'driver_mapping_export.xlsx';
@@ -202,7 +202,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             JOIN Vehicles v ON mk.VehicleID = v.VehicleID
             LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
             LEFT JOIN Depots d ON v.DepotID = d.DepotID
-            WHERE (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
           `);
         data = monthlyKm.recordset;
         filename = 'monthly_km_export.xlsx';
@@ -382,7 +382,7 @@ export const uploadDriverMapping = async (req: AuthRequest, res: Response) => {
             UPDATE Vehicles 
             SET AssignedDriverID = @DriverID, UpdatedAt = GETDATE()
             WHERE Plate = @Plate
-            AND (CompanyID = @CompanyID OR @CompanyID IS NULL)
+            AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
           `);
 
         if (result.rowsAffected[0] === 0) {
@@ -524,7 +524,7 @@ export const uploadVehicles = async (req: AuthRequest, res: Response) => {
                 AssignedDriverID = @AssignedDriverID,
                 Status = @Status,
                 UpdatedAt = GETDATE()
-              WHERE Plate = @Plate AND (CompanyID = @CompanyID OR @CompanyID IS NULL)
+              WHERE Plate = @Plate AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
             END
             ELSE
             BEGIN
@@ -579,7 +579,7 @@ export const uploadInsurance = async (req: AuthRequest, res: Response) => {
           .input('Plate', sql.NVarChar(20), plate)
           .input('CompanyID', sql.Int, elevatedVehicle ? null : req.user?.CompanyID || null)
           .input('UserID', sql.Int, req.user?.UserID)
-          .query('SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))');
+          .query(`SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}`);
         
         if (vehicleResult.recordset.length === 0) {
           throw new Error(`Vehicle with plate ${plate} not found or access denied`);
@@ -656,7 +656,7 @@ export const uploadFuel = async (req: AuthRequest, res: Response) => {
           .input('Plate', sql.NVarChar(20), plate)
           .input('CompanyID', sql.Int, elevatedFuel ? null : req.user?.CompanyID || null)
           .input('UserID', sql.Int, req.user?.UserID)
-          .query('SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))');
+          .query(`SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}`);
         
         if (vehicleResult.recordset.length === 0) {
           throw new Error(`Vehicle with plate ${plate} not found or access denied`);

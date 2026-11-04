@@ -14,6 +14,7 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import logger from './utils/logger';
 import { apiLimiter } from './middleware/rateLimiter';
+import { authenticate, authorizeRole } from './middleware/auth';
 import { initSocket } from './socket';
 
 dotenv.config();
@@ -49,8 +50,13 @@ app.use(express.urlencoded({ extended: true }));
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Swagger Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Swagger Documentation: prod'da yalnızca yetkili (admin) kullanıcılar
+const docsGuard = process.env.NODE_ENV === 'production'
+  ? [authenticate, authorizeRole(['ADMIN'])]
+  : [];
+app.use('/api-docs', ...docsGuard, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  swaggerOptions: { persistAuthorization: true },
+}));
 
 app.use('/api', routes);
 

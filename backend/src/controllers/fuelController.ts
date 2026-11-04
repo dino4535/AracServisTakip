@@ -6,7 +6,7 @@ import { AuthRequest } from '../middleware/auth';
 import { fuelSchema } from '../schemas/fuelSchema';
 import { logAudit } from '../services/auditService';
 import { opetService } from '../services/opetService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -143,7 +143,7 @@ export const getFuelById = async (req: AuthRequest, res: Response): Promise<void
         JOIN Vehicles v ON f.VehicleID = v.VehicleID
         LEFT JOIN Users u ON f.FilledBy = u.UserID
         WHERE f.FuelRecordID = @FuelRecordID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (result.recordset.length === 0) {
@@ -181,7 +181,7 @@ export const createFuelRecord = async (req: AuthRequest, res: Response): Promise
       .query(`
         SELECT CompanyID FROM Vehicles 
         WHERE VehicleID = @VehicleID 
-        AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
       `);
 
     if (vehicleCheck.recordset.length === 0) {
@@ -252,7 +252,7 @@ export const updateFuelRecord = async (req: AuthRequest, res: Response): Promise
         FROM FuelRecords f
         JOIN Vehicles v ON f.VehicleID = v.VehicleID
         WHERE f.FuelRecordID = @FuelRecordID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (oldDataResult.recordset.length === 0) {
@@ -319,7 +319,7 @@ export const deleteFuelRecord = async (req: AuthRequest, res: Response): Promise
         FROM FuelRecords f
         JOIN Vehicles v ON f.VehicleID = v.VehicleID
         WHERE f.FuelRecordID = @FuelRecordID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (oldDataResult.recordset.length === 0) {
@@ -359,7 +359,7 @@ export const getFuelConsumption = async (req: AuthRequest, res: Response): Promi
       .query(`
         SELECT CompanyID FROM Vehicles 
         WHERE VehicleID = @VehicleID 
-        AND (@CompanyID IS NULL OR CompanyID = @CompanyID OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
       `);
 
     if (accessCheck.recordset.length === 0) {

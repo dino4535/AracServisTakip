@@ -5,7 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { vehicleSchema, updateKmSchema } from '../schemas/vehicleSchema';
 import { logAudit } from '../services/auditService';
 import { riskService } from '../services/riskService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 export const calculateRisks = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -43,9 +43,7 @@ export const updateNextMaintenanceKm = async (req: AuthRequest, res: Response): 
         UPDATE Vehicles
         SET NextMaintenanceKm = @NextMaintenanceKm
         WHERE VehicleID = @VehicleID
-        AND (@CompanyID IS NULL 
-          OR CompanyID = @CompanyID 
-          OR CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
       `);
 
     if (result.rowsAffected[0] === 0) {
@@ -362,10 +360,7 @@ export const getVehicleById = async (req: AuthRequest, res: Response): Promise<v
         LEFT JOIN Users u ON v.AssignedDriverID = u.UserID
         LEFT JOIN Users m ON v.ManagerID = m.UserID
         WHERE v.VehicleID = @VehicleID
-        AND (@CompanyID IS NULL OR 
-             v.CompanyID = @CompanyID OR 
-             v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)
-        )
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (result.recordset.length === 0) {
@@ -644,9 +639,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .query(`
         SELECT CompanyID, Plate, VIN, CurrentKm, TrioVehicleId, MaintenanceIntervalKm FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (vehicleCheck.recordset.length === 0) {
@@ -821,9 +814,7 @@ export const deleteVehicle = async (req: AuthRequest, res: Response): Promise<vo
       .query(`
         SELECT 1 FROM Vehicles v
         WHERE VehicleID = @VehicleID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (vehicleCheck.recordset.length === 0) {

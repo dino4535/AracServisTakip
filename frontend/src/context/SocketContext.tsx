@@ -25,6 +25,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const socketInstance = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
         withCredentials: true,
         transports: ['websocket', 'polling'],
+        auth: { token: localStorage.getItem('token') || undefined },
       });
 
       socketInstance.on('connect', () => {

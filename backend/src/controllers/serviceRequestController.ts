@@ -7,7 +7,7 @@ import { createNotification } from '../services/notificationService';
 import { serviceRequestSchema } from '../schemas/serviceRequestSchema';
 import { logAudit } from '../services/auditService';
 import { sendEmail } from '../services/emailService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 import { syncVehicleMaintenanceKm } from '../utils/vehicleMaintenance';
 
 export const getAllServiceRequests = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -197,7 +197,7 @@ export const getServiceRequestById = async (req: AuthRequest, res: Response): Pr
         LEFT JOIN Users requester ON sr.RequestedBy = requester.UserID
         LEFT JOIN Users assignee ON sr.AssignedTo = assignee.UserID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (result.recordset.length === 0) {
@@ -241,9 +241,7 @@ export const createServiceRequest = async (req: AuthRequest, res: Response): Pro
         LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
         LEFT JOIN Depots d ON v.DepotID = d.DepotID
         WHERE v.VehicleID = @VehicleID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (vehicleCheck.recordset.length === 0) {
@@ -491,9 +489,7 @@ export const updateServiceRequest = async (req: AuthRequest, res: Response): Pro
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -611,9 +607,7 @@ export const approveServiceRequest = async (req: AuthRequest, res: Response): Pr
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -851,9 +845,7 @@ export const rejectServiceRequest = async (req: AuthRequest, res: Response): Pro
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -1081,9 +1073,7 @@ export const completeServiceRequest = async (req: AuthRequest, res: Response): P
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -1160,9 +1150,7 @@ export const markReturnedFromService = async (req: AuthRequest, res: Response): 
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {
@@ -1386,9 +1374,7 @@ export const deleteServiceRequest = async (req: AuthRequest, res: Response): Pro
         FROM ServiceRequests sr
         JOIN Vehicles v ON sr.VehicleID = v.VehicleID
         WHERE sr.RequestID = @RequestID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (checkQuery.recordset.length === 0) {

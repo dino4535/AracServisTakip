@@ -3,7 +3,7 @@ import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 const parseDecimal10_2 = (value: unknown): number | null => {
   if (value === undefined || value === null) return null;
@@ -127,10 +127,10 @@ export const getAllInsuranceRecords = async (req: AuthRequest, res: Response): P
       if (userDepotIds.length > 0) {
         whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        whereClause += ` AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        whereClause += ` AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     } else {
-      whereClause += ` AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+      whereClause += ` AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
     }
 
     if (vehicleId) {
@@ -246,7 +246,7 @@ export const getInsuranceById = async (req: AuthRequest, res: Response): Promise
         FROM InsuranceRecords i
         LEFT JOIN Vehicles v ON i.VehicleID = v.VehicleID
         WHERE i.InsuranceID = @InsuranceID
-        AND (@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (result.recordset.length === 0) {
@@ -296,9 +296,7 @@ export const createInsuranceRecord = async (req: AuthRequest, res: Response): Pr
         SELECT 1 
         FROM Vehicles v
         WHERE v.VehicleID = @VehicleID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (check.recordset.length === 0) {
@@ -383,9 +381,7 @@ export const updateInsuranceRecord = async (req: AuthRequest, res: Response): Pr
         FROM InsuranceRecords i
         JOIN Vehicles v ON i.VehicleID = v.VehicleID
         WHERE i.InsuranceID = @InsuranceID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (check.recordset.length === 0) {
@@ -472,9 +468,7 @@ export const deleteInsuranceRecord = async (req: AuthRequest, res: Response): Pr
         FROM InsuranceRecords i
         JOIN Vehicles v ON i.VehicleID = v.VehicleID
         WHERE i.InsuranceID = @InsuranceID
-        AND (@CompanyID IS NULL 
-          OR v.CompanyID = @CompanyID 
-          OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))
+        AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
       `);
 
     if (check.recordset.length === 0) {

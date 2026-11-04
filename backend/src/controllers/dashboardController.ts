@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { connectDB } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import sql from 'mssql';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql } from '../utils/authScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -28,7 +28,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 
@@ -90,7 +90,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 
@@ -167,7 +167,7 @@ export const getFuelConsumption = async (req: AuthRequest, res: Response): Promi
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 
@@ -226,7 +226,7 @@ export const getMaintenanceCosts = async (req: AuthRequest, res: Response): Prom
       if (userDepotIds.length > 0) {
         accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
       } else {
-        accessCondition = `(@CompanyID IS NULL OR v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
       }
     }
 
