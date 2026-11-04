@@ -5,7 +5,30 @@ import { AuthRequest } from '../middleware/auth';
 import { vehicleSchema, updateKmSchema } from '../schemas/vehicleSchema';
 import { logAudit } from '../services/auditService';
 import { riskService } from '../services/riskService';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, buildAccessCondition } from '../utils/authScope';
+
+// Depo ataması aracın kendi şirketine ait bir depoya yapılmalıdır. Aksi halde çapraz şirket
+// depo kayıtları oluşur (Bulgu: Dino Gıda araçları Bermer deposuna atanmıştı ve bu araçlar
+// Bermer kullanıcılarına görünüyordu).
+const assertDepotMatchesCompany = async (
+  pool: sql.ConnectionPool,
+  depotId: unknown,
+  companyId: unknown
+): Promise<string | null> => {
+  const depot = Number(depotId);
+  const company = Number(companyId);
+  if (!Number.isInteger(depot) || depot <= 0) return null; // depo atanmıyor
+  if (!Number.isInteger(company) || company <= 0) return null;
+
+  const r = await pool
+    .request()
+    .input('DepotID', sql.Int, depot)
+    .query('SELECT CompanyID FROM Depots WHERE DepotID = @DepotID');
+
+  if (r.recordset.length === 0) return 'Depot not found';
+  if (r.recordset[0].CompanyID !== company) return 'Depot does not belong to the vehicle company';
+  return null;
+};
 
 export const calculateRisks = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -89,11 +112,7 @@ export const getAllVehicles = async (req: AuthRequest, res: Response): Promise<v
     const userDepotIds = userDepotsResult.recordset.map(r => r.DepotID);
 
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        whereClause += ` AND (v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      }
+      whereClause += ` AND ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v', '@UserCompanyID')}`;
     }
 
     if (companyId) {
@@ -205,25 +224,29 @@ export const getVehicleFullOverviewByPlate = async (req: AuthRequest, res: Respo
     const companyId = req.user?.CompanyID;
     const elevated = isElevatedRole(req.user?.Role);
 
-    let accessCondition = '1=1';
+    // Depo ataması olan kullanıcılar için şirket içi depo daraltması burada da uygulanır;
+    // aksi halde plaka bilinen herhangi bir şirket aracının tüm detayı okunabiliyordu.
+    let userDepotIds: number[] = [];
+    if (!elevated && userId) {
+      const depotResult = await pool.request()
+        .input('UserID', sql.Int, userId)
+        .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
 
-    if (!elevated) {
-      if (companyId) {
-        accessCondition = `(v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      } else if (userId) {
-        accessCondition = `v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`;
-      }
+      userDepotIds = depotResult.recordset
+        .map((row: any) => row.DepotID)
+        .filter((id: any) => id !== null && id !== undefined);
     }
+
+    const accessCondition = buildAccessCondition(req.user?.Role, companyId, userDepotIds, 'v');
 
     const request = pool.request();
     request.input('Plate', sql.NVarChar(20), plate.trim());
     if (!elevated) {
-      if (companyId) {
+      if (companyId != null) {
         request.input('CompanyID', sql.Int, companyId);
       }
-      if (userId) {
-        request.input('UserID', sql.Int, userId);
-      }
+      // Kapsam SQL'i her zaman @UserID kullanır; parametre koşulsuz bağlanmalıdır.
+      request.input('UserID', sql.Int, userId ?? null);
     }
 
     const overviewQuery = `
@@ -419,6 +442,13 @@ export const createVehicle = async (req: AuthRequest, res: Response): Promise<vo
         res.status(403).json({ error: 'You do not have permission for this company' });
         return;
       }
+    }
+
+    // Depo ataması aracın şirketiyle tutarlı olmalıdır (çapraz şirket depo kaydı engellenir).
+    const depotCompanyError = await assertDepotMatchesCompany(pool, depotId, finalCompanyId);
+    if (depotCompanyError) {
+      res.status(400).json({ error: depotCompanyError });
+      return;
     }
 
     const safeVin = vin && vin.trim() !== '' ? vin : plate;
@@ -655,6 +685,17 @@ export const updateVehicle = async (req: AuthRequest, res: Response): Promise<vo
 
     if (companyId && companyId !== currentVehicleCompanyId && !elevated) {
       res.status(403).json({ error: 'Only elevated users can change vehicle company' });
+      return;
+    }
+
+    // Depo ataması aracın şirketiyle tutarlı olmalıdır (çapraz şirket depo kaydı engellenir).
+    const depotCompanyError = await assertDepotMatchesCompany(
+      pool,
+      depotId,
+      elevated && companyId ? companyId : currentVehicleCompanyId
+    );
+    if (depotCompanyError) {
+      res.status(400).json({ error: depotCompanyError });
       return;
     }
 

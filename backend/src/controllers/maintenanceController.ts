@@ -4,7 +4,7 @@ import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { maintenanceSchema } from '../schemas/maintenanceSchema';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, buildAccessCondition } from '../utils/authScope';
 import { syncVehicleMaintenanceKm } from '../utils/vehicleMaintenance';
 
 export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -36,11 +36,7 @@ export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response):
     }
 
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        whereClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      }
+      whereClause += ` AND ${buildAccessCondition(userRole, companyId, userDepotIds, 'v')}`;
     }
 
     if (vehicleId) {
@@ -88,9 +84,8 @@ export const getAllMaintenanceRecords = async (req: AuthRequest, res: Response):
       if (companyId) {
         request.input('CompanyID', sql.Int, companyId);
       }
-      if (userId) {
-        request.input('UserID', sql.Int, userId);
-      }
+      // Kapsam SQL'i her zaman @UserID kullanır; parametre koşulsuz bağlanmalıdır.
+      request.input('UserID', sql.Int, userId ?? null);
     }
 
     if (vehicleId) {
@@ -368,13 +363,7 @@ export const getMaintenancePredictions = async (req: AuthRequest, res: Response)
 
     let accessClause = `WHERE v.Status = 'Active'`;
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else if (companyId) {
-        accessClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      } else {
-        accessClause += ` AND v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`;
-      }
+      accessClause += ` AND ${buildAccessCondition(userRole, companyId, userDepotIds, 'v')}`;
     }
 
     let query = `

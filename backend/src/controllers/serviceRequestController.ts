@@ -7,7 +7,7 @@ import { createNotification } from '../services/notificationService';
 import { serviceRequestSchema } from '../schemas/serviceRequestSchema';
 import { logAudit } from '../services/auditService';
 import { sendEmail } from '../services/emailService';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, buildAccessCondition } from '../utils/authScope';
 import { syncVehicleMaintenanceKm } from '../utils/vehicleMaintenance';
 
 export const getAllServiceRequests = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -38,11 +38,7 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
     }
 
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessClause += ` AND (v.CompanyID = @CompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      }
+      accessClause += ` AND ${buildAccessCondition(req.user?.Role, companyId, userDepotIds, 'v')}`;
     }
 
     let whereClause = accessClause;
@@ -126,9 +122,8 @@ export const getAllServiceRequests = async (req: AuthRequest, res: Response): Pr
       if (companyId) {
         request.input('CompanyID', sql.Int, companyId);
       }
-      if (userId) {
-        request.input('UserID', sql.Int, userId);
-      }
+      // Kapsam SQL'i her zaman @UserID kullanır; parametre koşulsuz bağlanmalıdır.
+      request.input('UserID', sql.Int, userId ?? null);
     }
 
     if (vehicleId) {

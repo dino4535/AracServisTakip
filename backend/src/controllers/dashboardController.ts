@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { connectDB } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import sql from 'mssql';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, buildAccessCondition } from '../utils/authScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -25,11 +25,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     const statsQuery = `
@@ -87,11 +83,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     const activityQuery = `
@@ -164,11 +156,7 @@ export const getFuelConsumption = async (req: AuthRequest, res: Response): Promi
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     // Get date 6 months ago from the first day of that month
@@ -223,11 +211,7 @@ export const getMaintenanceCosts = async (req: AuthRequest, res: Response): Prom
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     // Monthly breakdown by company for last 6 months + current

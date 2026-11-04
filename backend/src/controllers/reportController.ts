@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, buildAccessCondition } from '../utils/authScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -24,11 +24,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     // Basic counts
@@ -99,11 +95,7 @@ export const getVehiclePerformance = async (req: AuthRequest, res: Response) => 
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     const result = await pool.request()
@@ -215,11 +207,7 @@ export const getTrendAnalysis = async (req: AuthRequest, res: Response) => {
 
     let accessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        accessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        accessCondition = `${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
+      accessCondition = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
     }
 
     const query = `
@@ -355,11 +343,7 @@ export const getDetailedReport = async (req: AuthRequest, res: Response) => {
 
     let vehicleAccessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        vehicleAccessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        vehicleAccessCondition = `(@UserCompanyID IS NULL OR v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      }
+      vehicleAccessCondition = buildAccessCondition(req.user?.Role, userCompanyId, userDepotIds, 'v', '@UserCompanyID');
     }
 
     // Main Query: Aggregates costs per vehicle within date range
@@ -511,7 +495,7 @@ export const getDetailedReport = async (req: AuthRequest, res: Response) => {
 export const getServiceHistoryReport = async (req: AuthRequest, res: Response) => {
   try {
     const { startDate, endDate, companyIds, depotId, driverId, plate, missingCost, page, limit } = req.query;
-    // Check for both 'SuperAdmin' and 'Super Admin'
+    // Yalnızca SUPERADMIN kapsamsızdır ('Super Admin' / 'SuperAdmin' yazım farkları normalize edilir)
     const elevated = isElevatedRole(req.user?.Role);
     const userCompanyId = elevated ? null : req.user?.CompanyID;
 
@@ -536,11 +520,7 @@ export const getServiceHistoryReport = async (req: AuthRequest, res: Response) =
 
     let vehicleAccessCondition = '1=1';
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        vehicleAccessCondition = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        vehicleAccessCondition = `(@UserCompanyID IS NULL OR v.CompanyID = @UserCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      }
+      vehicleAccessCondition = buildAccessCondition(req.user?.Role, userCompanyId, userDepotIds, 'v', '@UserCompanyID');
     }
     
     // Pagination logic

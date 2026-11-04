@@ -3,7 +3,7 @@ import { connectDB } from '../config/database';
 import sql from 'mssql';
 import { AuthRequest } from '../middleware/auth';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, buildAccessCondition } from '../utils/authScope';
 
 const parseDecimal10_2 = (value: unknown): number | null => {
   if (value === undefined || value === null) return null;
@@ -123,15 +123,7 @@ export const getAllInsuranceRecords = async (req: AuthRequest, res: Response): P
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        whereClause += ` AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-      }
-    } else {
-      whereClause += ` AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}`;
-    }
+    whereClause += ` AND ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v')}`;
 
     if (vehicleId) {
       whereClause += ` AND i.VehicleID = @VehicleID`;

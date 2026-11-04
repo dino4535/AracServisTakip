@@ -5,7 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { z } from 'zod';
 import { logAudit } from '../services/auditService';
 import * as XLSX from 'xlsx';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, buildAccessCondition } from '../utils/authScope';
 
 const saveMonthlyKmSchema = z.object({
   month: z.number().min(1).max(12),
@@ -44,9 +44,8 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
     
     const userRole = req.user?.Role;
     const userId = req.user?.UserID;
-    const userCompanyId = userRole === 'SuperAdmin' ? null : req.user?.CompanyID;
-
-    const elevated = isElevatedRole(req.user?.Role);
+    const elevated = isElevatedRole(userRole);
+    const userCompanyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
     if (!elevated && userId) {
@@ -60,19 +59,7 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
     }
 
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        const companyConditions: string[] = [];
-        if (userCompanyId) {
-          companyConditions.push(`v.CompanyID = @UserCompanyID`);
-        }
-        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-        
-        if (companyConditions.length > 0) {
-           whereClause += ` AND (${companyConditions.join(' OR ')})`;
-        }
-      }
+      whereClause += ` AND ${buildAccessCondition(userRole, userCompanyId, userDepotIds, 'v', '@UserCompanyID')}`;
       
       // Add optional company filter if provided in query
       if (companyId) {
@@ -128,7 +115,8 @@ export const getMonthlyKm = async (req: AuthRequest, res: Response): Promise<voi
 
     if (!elevated) {
       if (userCompanyId) request.input('UserCompanyID', sql.Int, userCompanyId);
-      if (userId) request.input('UserID', sql.Int, userId);
+      // Kapsam SQL'i her zaman @UserID kullanır; parametre koşulsuz bağlanmalıdır.
+      request.input('UserID', sql.Int, userId ?? null);
       if (companyId) request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
     } else if (companyId) {
       request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
@@ -170,9 +158,8 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
     
     const userRole = req.user?.Role;
     const userId = req.user?.UserID;
-    const userCompanyId = userRole === 'SuperAdmin' ? null : req.user?.CompanyID;
-
-    const elevated = isElevatedRole(req.user?.Role);
+    const elevated = isElevatedRole(userRole);
+    const userCompanyId = elevated ? null : req.user?.CompanyID;
 
     let userDepotIds: number[] = [];
     if (!elevated && userId) {
@@ -186,19 +173,7 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
     }
 
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        const companyConditions: string[] = [];
-        if (userCompanyId) {
-          companyConditions.push(`v.CompanyID = @UserCompanyID`);
-        }
-        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-        
-        if (companyConditions.length > 0) {
-           whereClause += ` AND (${companyConditions.join(' OR ')})`;
-        }
-      }
+      whereClause += ` AND ${buildAccessCondition(userRole, userCompanyId, userDepotIds, 'v', '@UserCompanyID')}`;
 
       // Add optional company filter if provided in query
       if (companyId) {
@@ -236,7 +211,8 @@ export const getMissingMonthlyKm = async (req: AuthRequest, res: Response): Prom
       
     if (userCompanyId) request.input('UserCompanyID', sql.Int, userCompanyId);
     if (companyId) request.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
-    if (userId) request.input('UserID', sql.Int, userId);
+    // Kapsam SQL'i her zaman @UserID kullanır; parametre koşulsuz bağlanmalıdır.
+    request.input('UserID', sql.Int, userId ?? null);
 
     const result = await request.query(query);
 
@@ -287,17 +263,7 @@ export const saveMonthlyKm = async (req: AuthRequest, res: Response): Promise<vo
 
       let accessWhere = '';
 
-      if (userDepotIds.length > 0) {
-        accessWhere = `v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        const companyConditions: string[] = [];
-        if (companyId) {
-          companyConditions.push(`v.CompanyID = @CompanyID`);
-        }
-        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-        
-        accessWhere = companyConditions.length > 0 ? `(${companyConditions.join(' OR ')})` : '1=0';
-      }
+      accessWhere = buildAccessCondition(userRole, companyId, userDepotIds, 'v');
 
       const accessCheck = await accessRequest.query(`
         SELECT COUNT(*) as count 
@@ -388,28 +354,14 @@ export const getVehicleKmHistory = async (req: AuthRequest, res: Response): Prom
 
     // Check user depots
     let userDepotIds: number[] = [];
-    if (req.user?.UserID && req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
+    if (req.user?.UserID && !isElevatedRole(req.user?.Role)) {
       const depotResult = await pool.request()
         .input('UserID', sql.Int, req.user.UserID)
         .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
       userDepotIds = depotResult.recordset.map((r: any) => r.DepotID);
     }
 
-    let accessWhere = '';
-    if (req.user?.Role === 'SuperAdmin' || req.user?.Role === 'Super Admin') {
-        accessWhere = '1=1';
-    } else {
-        if (userDepotIds.length > 0) {
-            accessWhere = `v.DepotID IN (${userDepotIds.join(',')})`;
-        } else {
-            const companyConditions: string[] = [];
-            if (req.user?.CompanyID) {
-                companyConditions.push(`v.CompanyID = @CompanyID`);
-            }
-            companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-            accessWhere = companyConditions.length > 0 ? `(${companyConditions.join(' OR ')})` : '1=0';
-        }
-    }
+    const accessWhere = buildAccessCondition(req.user?.Role, req.user?.CompanyID, userDepotIds, 'v');
 
     // Permission check
     const accessCheck = await pool.request()
@@ -468,7 +420,7 @@ export const importMonthlyKm = async (req: AuthRequest, res: Response): Promise<
     let userDepotIds: number[] = [];
     let userCompanyIds: number[] = [];
     
-    if (req.user?.UserID && req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
+    if (req.user?.UserID && !isElevatedRole(req.user?.Role)) {
         const depotResult = await pool.request()
             .input('UserID', sql.Int, req.user.UserID)
             .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
@@ -527,23 +479,15 @@ export const importMonthlyKm = async (req: AuthRequest, res: Response): Promise<
 
         const vehicle = vehicleResult.recordset[0];
 
-        // Permission check
-        if (req.user?.Role !== 'SuperAdmin' && req.user?.Role !== 'Super Admin') {
-            let hasAccess = false;
-            
-            if (userDepotIds.length > 0) {
-                // User has Depot Restrictions
-                if (vehicle.DepotID && userDepotIds.includes(vehicle.DepotID)) {
-                    hasAccess = true;
-                }
-            } else {
-                // User has Company Access (No specific Depot restrictions)
-                if (userCompanyIds.includes(vehicle.CompanyID)) {
-                    hasAccess = true;
-                }
-            }
-            
-            if (!hasAccess) {
+        // Permission check: şirket kapsamı her zaman geçerlidir, depo ataması şirket içinde daraltır.
+        if (!isElevatedRole(req.user?.Role)) {
+            const inCompanyScope = userCompanyIds.includes(vehicle.CompanyID);
+            const inDepotScope = userDepotIds.length === 0
+                || vehicle.DepotID === null
+                || vehicle.DepotID === undefined
+                || userDepotIds.includes(vehicle.DepotID);
+
+            if (!inCompanyScope || !inDepotScope) {
                 errors.push(`Permission denied for vehicle: ${plate}`);
                 continue;
             }
@@ -650,7 +594,7 @@ export const getKmRange = async (req: AuthRequest, res: Response): Promise<void>
     const pool = await connectDB();
     const elevated = isElevatedRole(req.user?.Role);
     const userId = req.user?.UserID;
-    const userCompanyId = req.user?.Role === 'SuperAdmin' ? null : req.user?.CompanyID;
+    const userCompanyId = elevated ? null : req.user?.CompanyID;
 
     let whereClause = "WHERE v.Status = 'Active'";
 
@@ -665,14 +609,7 @@ export const getKmRange = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        const companyConditions: string[] = [];
-        if (userCompanyId) companyConditions.push(`v.CompanyID = @UserCompanyID`);
-        companyConditions.push(`v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID)`);
-        whereClause += ` AND (${companyConditions.join(' OR ')})`;
-      }
+      whereClause += ` AND ${buildAccessCondition(req.user?.Role, userCompanyId, userDepotIds, 'v', '@UserCompanyID')}`;
     }
 
     if (companyId) {
@@ -693,7 +630,8 @@ export const getKmRange = async (req: AuthRequest, res: Response): Promise<void>
         .input('EndExcl', sql.Date, endExclStr);
       if (!elevated) {
         if (userCompanyId) r.input('UserCompanyID', sql.Int, userCompanyId);
-        if (userId) r.input('UserID', sql.Int, userId);
+        // Kapsam SQL'i her zaman @UserID kullanır; parametre koşulsuz bağlanmalıdır.
+        r.input('UserID', sql.Int, userId ?? null);
       }
       if (companyId) r.input('FilterCompanyID', sql.Int, parseInt(companyId as string));
       if (search) r.input('SearchTerm', sql.NVarChar(100), search);

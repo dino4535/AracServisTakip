@@ -6,7 +6,7 @@ import { hashPassword } from '../utils/password';
 import crypto from 'crypto';
 import { sendEmail } from '../services/emailService';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, pickPrimaryRole, rolePriority } from '../utils/authScope';
 export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page = 1, limit = 50, search } = req.query;
@@ -17,10 +17,12 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
     const pool = await connectDB();
 
     let whereClause = ' WHERE u.IsActive = 1';
-    // Filter by company if not SuperAdmin
+    // SUPERADMIN tüm kullanıcıları görür; ADMIN (şirket admini) ve diğer roller yalnızca
+    // kendi şirket(ler)inin kullanıcılarını görür. Şirket kapsamı olmayan kullanıcı için
+    // koşul boş kümeye düşer (eski davranışta filtre hiç eklenmiyor ve tüm liste görünüyordu).
     const elevated = isElevatedRole(req.user?.Role);
-    if (req.user?.CompanyID && !elevated) {
-      whereClause += ` AND (u.CompanyID = @CompanyID OR u.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
+    if (!elevated) {
+      whereClause += ` AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'u')}`;
     }
 
     if (search) {
@@ -62,9 +64,11 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
 
     const request = pool.request();
     
-    if (req.user?.CompanyID && !elevated) {
-      request.input('CompanyID', sql.Int, req.user.CompanyID);
-      request.input('UserID', sql.Int, req.user.UserID);
+    if (!elevated) {
+      if (req.user?.CompanyID != null) {
+        request.input('CompanyID', sql.Int, req.user.CompanyID);
+      }
+      request.input('UserID', sql.Int, req.user?.UserID);
     }
     if (search) {
       request.input('SearchTerm', sql.NVarChar(100), search);
@@ -141,6 +145,8 @@ export const getUserById = async (req: AuthRequest, res: Response): Promise<void
 };
 
 // Elevated olmayan çağırıcılar elevated rol (ADMIN/SUPERADMIN) atayamaz → dikey yetki escalation engeli.
+// Not: ADMIN artık elevated sayılmıyor (şirket admini), bu yüzden ADMIN/SUPERADMIN rollerini
+// yalnızca SUPERADMIN atayabilir.
 const assertCanAssignRoles = async (
   pool: sql.ConnectionPool,
   roleIds: unknown,
@@ -155,6 +161,139 @@ const assertCanAssignRoles = async (
     .request()
     .query(`SELECT COUNT(*) AS C FROM Roles WHERE RoleID IN (${ids.join(',')}) AND LOWER(LTRIM(RTRIM(Name))) IN ('admin', 'superadmin')`);
   return r.recordset[0].C > 0 ? 'Elevated roles can only be assigned by an administrator' : null;
+};
+
+// Çağırıcının şirket kapsamı: kendi CompanyID'i + UserCompanies kayıtları.
+const getCallerCompanyIds = async (
+  pool: sql.ConnectionPool,
+  caller?: AuthRequest['user']
+): Promise<number[]> => {
+  if (!caller?.UserID) return [];
+  const r = await pool
+    .request()
+    .input('UserID', sql.Int, caller.UserID)
+    .query('SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID');
+  const ids: number[] = r.recordset
+    .map((row: any) => row.CompanyID)
+    .filter((c: any) => c !== null && c !== undefined);
+  if (caller.CompanyID !== null && caller.CompanyID !== undefined) ids.push(caller.CompanyID);
+  return [...new Set(ids)];
+};
+
+// Kullanıcı yönetimi (oluşturma/güncelleme/pasife alma/depo atama) için kapsam kontrolü:
+// SUPERADMIN sınırsız; ADMIN ve diğer roller yalnızca kendi şirket kapsamındaki kullanıcıları
+// yönetebilir ve yeni şirket atamalarını yalnızca kendi şirketleri arasından seçebilir.
+// Ayrıca kendinden daha yetkili role sahip kullanıcıları yönetemez.
+const assertCanManageUser = async (
+  pool: sql.ConnectionPool,
+  caller: AuthRequest['user'],
+  targetUserId?: unknown,
+  requestedCompanyIds: unknown[] = []
+): Promise<string | null> => {
+  if (isElevatedRole(caller?.Role)) return null;
+
+  const scope = await getCallerCompanyIds(pool, caller);
+  if (scope.length === 0) {
+    return 'Your account has no company scope; user management is not allowed';
+  }
+
+  const requested = [
+    ...new Set(
+      (Array.isArray(requestedCompanyIds) ? requestedCompanyIds : [])
+        .map((c: unknown) => Number(c))
+        .filter((n: number) => Number.isInteger(n) && n > 0)
+    ),
+  ];
+  if (requested.some((cid) => !scope.includes(cid))) {
+    return 'You can only assign companies within your own company scope';
+  }
+
+  if (targetUserId === null || targetUserId === undefined || targetUserId === '') return null;
+  const targetId = Number(targetUserId);
+  if (!Number.isInteger(targetId) || targetId <= 0) return null;
+
+  const targetResult = await pool
+    .request()
+    .input('TargetUserID', sql.Int, targetId)
+    .query(`
+      SELECT u.UserID, u.CompanyID,
+        (SELECT STRING_AGG(rn.Name, ',') FROM (
+          SELECT DISTINCT r.Name FROM UserRoles ur JOIN Roles r ON ur.RoleID = r.RoleID WHERE ur.UserID = u.UserID
+        ) rn) AS RoleNames
+      FROM Users u WHERE u.UserID = @TargetUserID
+    `);
+  if (targetResult.recordset.length === 0) return null; // 404 akışı çağıran tarafta yönetilir
+
+  const target = targetResult.recordset[0];
+  const callerPriority = rolePriority(pickPrimaryRole(caller?.Roles ?? [caller?.Role]));
+  const targetPriority = rolePriority(
+    pickPrimaryRole(target.RoleNames ? String(target.RoleNames).split(',') : [])
+  );
+  if (targetPriority < callerPriority) {
+    return 'You cannot manage a user with a higher role';
+  }
+
+  const targetCompanies: number[] = [];
+  if (target.CompanyID !== null && target.CompanyID !== undefined) targetCompanies.push(target.CompanyID);
+  const targetCompanyResult = await pool
+    .request()
+    .input('TargetUserID', sql.Int, targetId)
+    .query('SELECT CompanyID FROM UserCompanies WHERE UserID = @TargetUserID');
+  targetCompanyResult.recordset.forEach((row: any) => {
+    if (row.CompanyID !== null && row.CompanyID !== undefined) targetCompanies.push(row.CompanyID);
+  });
+
+  // Şirket kapsamı olmayan kullanıcılar yalnızca SUPERADMIN tarafından yönetilebilir
+  // (aksi halde sahipsiz hesaplar üzerinden yetki yükseltme riski doğar).
+  if (targetCompanies.length === 0) {
+    return 'Target user has no company scope; only a super administrator can manage it';
+  }
+  if (!targetCompanies.some((c) => scope.includes(c))) {
+    return 'You can only manage users within your own company scope';
+  }
+
+  return null;
+};
+
+// Depo yönetimi: SUPERADMIN sınırsız; ADMIN ve diğer roller yalnızca kendi şirket
+// kapsamındaki depoları oluşturabilir/güncelleyebilir/silebilir.
+const assertCanManageDepot = async (
+  pool: sql.ConnectionPool,
+  caller: AuthRequest['user'],
+  requestedCompanyId?: unknown,
+  depotId?: unknown
+): Promise<string | null> => {
+  if (isElevatedRole(caller?.Role)) return null;
+
+  const scope = await getCallerCompanyIds(pool, caller);
+  if (scope.length === 0) {
+    return 'Your account has no company scope; depot management is not allowed';
+  }
+
+  const hasRequestedCompany =
+    requestedCompanyId !== undefined && requestedCompanyId !== null && requestedCompanyId !== '';
+  if (hasRequestedCompany) {
+    const requested = Number(requestedCompanyId);
+    if (!Number.isInteger(requested) || !scope.includes(requested)) {
+      return 'You can only manage depots within your own company scope';
+    }
+  }
+
+  const idNum = Number(depotId);
+  if (depotId !== undefined && depotId !== null && depotId !== '' && Number.isInteger(idNum) && idNum > 0) {
+    const r = await pool
+      .request()
+      .input('DepotID', sql.Int, idNum)
+      .query('SELECT CompanyID FROM Depots WHERE DepotID = @DepotID');
+    if (r.recordset.length > 0) {
+      const cid = r.recordset[0].CompanyID;
+      if (cid === null || cid === undefined || !scope.includes(cid)) {
+        return 'You can only manage depots within your own company scope';
+      }
+    }
+  }
+
+  return null;
 };
 
 export const createUser = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -181,6 +320,15 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
     const roleAssignError = await assertCanAssignRoles(pool, roleIds, req.user?.Role);
     if (roleAssignError) {
       res.status(403).json({ error: roleAssignError });
+      return;
+    }
+
+    const createScopeError = await assertCanManageUser(pool, req.user, null, [
+      companyId,
+      ...(Array.isArray(companyIds) ? companyIds : []),
+    ]);
+    if (createScopeError) {
+      res.status(403).json({ error: createScopeError });
       return;
     }
 
@@ -282,6 +430,15 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
     const roleAssignError = await assertCanAssignRoles(pool, roleIds, req.user?.Role);
     if (roleAssignError) {
       res.status(403).json({ error: roleAssignError });
+      return;
+    }
+
+    const updateScopeError = await assertCanManageUser(pool, req.user, id, [
+      companyId,
+      ...(Array.isArray(companyIds) ? companyIds : []),
+    ]);
+    if (updateScopeError) {
+      res.status(403).json({ error: updateScopeError });
       return;
     }
 
@@ -425,6 +582,12 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     const pool = await connectDB();
+
+    const deleteScopeError = await assertCanManageUser(pool, req.user, id);
+    if (deleteScopeError) {
+      res.status(403).json({ error: deleteScopeError });
+      return;
+    }
 
     const result = await pool
       .request()
@@ -626,7 +789,19 @@ export const getAllPermissions = async (req: AuthRequest, res: Response): Promis
 export const getAllCompanies = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const pool = await connectDB();
-    const result = await pool.request().query('SELECT * FROM Companies WHERE IsActive = 1');
+
+    // SUPERADMIN tüm şirketleri görür; diğer roller yalnızca kendi şirket kapsamını görür.
+    if (isElevatedRole(req.user?.Role)) {
+      const result = await pool.request().query('SELECT * FROM Companies WHERE IsActive = 1');
+      res.json({ companies: result.recordset });
+      return;
+    }
+
+    const companyIds = await getCallerCompanyIds(pool, req.user);
+    const idList = companyIds.length > 0 ? companyIds.join(',') : '0';
+    const result = await pool
+      .request()
+      .query(`SELECT * FROM Companies WHERE IsActive = 1 AND CompanyID IN (${idList})`);
     res.json({ companies: result.recordset });
   } catch (error) {
     console.error('Get companies error:', error);
@@ -643,17 +818,28 @@ export const getAllDepots = async (req: AuthRequest, res: Response): Promise<voi
 
     const pool = await connectDB();
 
-    const countQuery = 'SELECT COUNT(*) as total FROM Depots';
+    // SUPERADMIN tüm depoları görür; diğer roller yalnızca kendi şirketlerinin depolarını görür.
+    const elevated = isElevatedRole(req.user?.Role);
+    const depotScope = elevated ? '1=1' : companyScopeSql(req.user?.Role, req.user?.CompanyID, 'd');
+
+    const countQuery = `SELECT COUNT(*) as total FROM Depots d WHERE ${depotScope}`;
     
     const dataQuery = `
-      SELECT * FROM Depots 
-      ORDER BY DepotID DESC
+      SELECT d.* FROM Depots d
+      WHERE ${depotScope}
+      ORDER BY d.DepotID DESC
       OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
     `;
 
     const request = pool.request();
     request.input('Offset', sql.Int, offset);
     request.input('Limit', sql.Int, limitNum);
+    if (!elevated) {
+      if (req.user?.CompanyID != null) {
+        request.input('CompanyID', sql.Int, req.user.CompanyID);
+      }
+      request.input('UserID', sql.Int, req.user?.UserID);
+    }
 
     const result = await request.query(`${countQuery}; ${dataQuery}`);
     
@@ -685,6 +871,13 @@ export const createDepot = async (req: AuthRequest, res: Response): Promise<void
     }
 
     const pool = await connectDB();
+
+    const createDepotError = await assertCanManageDepot(pool, req.user, companyId);
+    if (createDepotError) {
+      res.status(403).json({ error: createDepotError });
+      return;
+    }
+
     const result = await pool
       .request()
       .input('Name', sql.NVarChar(100), name)
@@ -713,6 +906,13 @@ export const updateDepot = async (req: AuthRequest, res: Response): Promise<void
     const { name, city, address, companyId } = req.body;
 
     const pool = await connectDB();
+
+    const updateDepotError = await assertCanManageDepot(pool, req.user, companyId, id);
+    if (updateDepotError) {
+      res.status(403).json({ error: updateDepotError });
+      return;
+    }
+
     await pool
       .request()
       .input('DepotID', sql.Int, id)
@@ -741,6 +941,12 @@ export const deleteDepot = async (req: AuthRequest, res: Response): Promise<void
     const { id } = req.params;
     const pool = await connectDB();
 
+    const deleteDepotError = await assertCanManageDepot(pool, req.user, undefined, id);
+    if (deleteDepotError) {
+      res.status(403).json({ error: deleteDepotError });
+      return;
+    }
+
     const result = await pool
       .request()
       .input('DepotID', sql.Int, id)
@@ -762,6 +968,14 @@ export const getDepotUsers = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { id } = req.params;
     const pool = await connectDB();
+
+    // Elevated olmayan çağırıcı yalnızca kendi şirketinin deposunu görebilir
+    const depotUsersError = await assertCanManageDepot(pool, req.user, undefined, id);
+    if (depotUsersError) {
+      res.status(403).json({ error: depotUsersError });
+      return;
+    }
+
     const result = await pool
       .request()
       .input('DepotID', sql.Int, id)
@@ -784,6 +998,46 @@ export const updateDepotUsers = async (req: AuthRequest, res: Response): Promise
     }
 
     const pool = await connectDB();
+
+    // Elevated olmayan çağırıcı yalnızca kendi şirketinin deposunu yönetebilir
+    if (!isElevatedRole(req.user?.Role)) {
+      const callerCompanyIds = await getCallerCompanyIds(pool, req.user);
+      const depotResult = await pool
+        .request()
+        .input('DepotID', sql.Int, Number(id))
+        .query('SELECT DepotID, CompanyID FROM Depots WHERE DepotID = @DepotID');
+      if (depotResult.recordset.length === 0) {
+        res.status(404).json({ error: 'Depot not found' });
+        return;
+      }
+      const depotCompanyId = depotResult.recordset[0].CompanyID;
+      if (depotCompanyId === null || depotCompanyId === undefined || !callerCompanyIds.includes(depotCompanyId)) {
+        res.status(403).json({ error: 'You can only manage depots within your own company scope' });
+        return;
+      }
+
+      // Depoya atanan kullanıcılar da çağırıcının şirket kapsamında olmalıdır;
+      // aksi halde başka şirketin kullanıcılarına depo atanabilir.
+      const requestedUserIds = [
+        ...new Set(userIds.map((u: unknown) => Number(u)).filter((n: number) => Number.isInteger(n) && n > 0)),
+      ];
+      if (requestedUserIds.length > 0) {
+        const scopeList = callerCompanyIds.join(',');
+        const targetScope = await pool
+          .request()
+          .query(`
+            SELECT u.UserID,
+              (CASE WHEN u.CompanyID IN (${scopeList}) THEN 1 ELSE 0 END)
+              + (SELECT COUNT(*) FROM UserCompanies uc WHERE uc.UserID = u.UserID AND uc.CompanyID IN (${scopeList})) AS InScope
+            FROM Users u WHERE u.UserID IN (${requestedUserIds.join(',')})
+          `);
+        if (targetScope.recordset.some((r: any) => Number(r.InScope) === 0)) {
+          res.status(403).json({ error: 'You can only assign users within your own company scope' });
+          return;
+        }
+      }
+    }
+
     const transaction = new sql.Transaction(pool);
 
     try {
@@ -794,8 +1048,13 @@ export const updateDepotUsers = async (req: AuthRequest, res: Response): Promise
         .input('DepotID', sql.Int, id)
         .query('DELETE FROM UserDepots WHERE DepotID = @DepotID');
 
-      // Add new assignments
-      for (const userId of userIds) {
+      // Add new assignments (mükerrer kayıtlar elenir; tabloda UNIQUE(UserID, DepotID) var)
+      const uniqueUserIds = [
+        ...new Set(
+          userIds.map((u: unknown) => Number(u)).filter((n: number) => Number.isInteger(n) && n > 0)
+        ),
+      ];
+      for (const userId of uniqueUserIds) {
         await transaction.request()
         .input('UserID', sql.Int, userId)
         .input('DepotID', sql.Int, id)
@@ -1000,6 +1259,33 @@ export const updateUserDepots = async (req: AuthRequest, res: Response): Promise
     }
 
     const pool = await connectDB();
+
+    const depotScopeError = await assertCanManageUser(pool, req.user, id);
+    if (depotScopeError) {
+      res.status(403).json({ error: depotScopeError });
+      return;
+    }
+
+    // Yalnızca kendi şirket kapsamındaki depolar atanabilir (SUPERADMIN hariç)
+    if (!isElevatedRole(req.user?.Role) && depotIds.length > 0) {
+      const callerCompanyIds = await getCallerCompanyIds(pool, req.user);
+      const ids = [
+        ...new Set(
+          depotIds.map((d: unknown) => Number(d)).filter((n: number) => Number.isInteger(n) && n > 0)
+        ),
+      ];
+      if (ids.length > 0) {
+        const companyList = callerCompanyIds.length > 0 ? callerCompanyIds.join(',') : '0';
+        const depotCheck = await pool
+          .request()
+          .query(`SELECT COUNT(*) AS C FROM Depots WHERE DepotID IN (${ids.join(',')}) AND (CompanyID IS NULL OR CompanyID NOT IN (${companyList}))`);
+        if (depotCheck.recordset[0].C > 0) {
+          res.status(403).json({ error: 'You can only assign depots within your own company scope' });
+          return;
+        }
+      }
+    }
+
     const transaction = new sql.Transaction(pool);
 
     try {
@@ -1010,8 +1296,13 @@ export const updateUserDepots = async (req: AuthRequest, res: Response): Promise
         .input('UserID', sql.Int, id)
         .query('DELETE FROM UserDepots WHERE UserID = @UserID');
 
-      // Add new assignments
-      for (const depotId of depotIds) {
+      // Add new assignments (mükerrer kayıtlar elenir; tabloda UNIQUE(UserID, DepotID) var)
+      const uniqueDepotIds = [
+        ...new Set(
+          depotIds.map((d: unknown) => Number(d)).filter((n: number) => Number.isInteger(n) && n > 0)
+        ),
+      ];
+      for (const depotId of uniqueDepotIds) {
         await transaction.request()
           .input('UserID', sql.Int, id)
           .input('DepotID', sql.Int, depotId)

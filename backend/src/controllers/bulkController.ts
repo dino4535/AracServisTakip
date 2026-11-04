@@ -8,7 +8,7 @@ import { insuranceSchema } from '../schemas/insuranceSchema';
 import { fuelSchema } from '../schemas/fuelSchema';
 import { hashPassword } from '../utils/password';
 import { logAudit } from '../services/auditService';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, buildAccessCondition } from '../utils/authScope';
 
 export const downloadTemplate = async (req: AuthRequest, res: Response) => {
   try {
@@ -91,7 +91,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             LEFT JOIN Depots d ON v.DepotID = d.DepotID
             LEFT JOIN Users m ON v.ManagerID = m.UserID
             LEFT JOIN Users dr ON v.AssignedDriverID = dr.UserID
-            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
+            WHERE ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, 'v')}
           `);
         data = vehicles.recordset;
         filename = 'vehicles_export.xlsx';
@@ -113,7 +113,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
               i.Notes as 'Description'
             FROM InsuranceRecords i
             JOIN Vehicles v ON i.VehicleID = v.VehicleID
-            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
+            WHERE ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, 'v')}
           `);
         data = insurance.recordset;
         filename = 'insurance_export.xlsx';
@@ -143,7 +143,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
             LEFT JOIN Depots d ON v.DepotID = d.DepotID
             LEFT JOIN Users u ON f.FilledBy = u.UserID
-            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
+            WHERE ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, 'v')}
           `);
         data = fuel.recordset;
         filename = 'fuel_export.xlsx';
@@ -180,7 +180,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
               dr.Email as 'DriverEmail'
             FROM Vehicles v
             LEFT JOIN Users dr ON v.AssignedDriverID = dr.UserID
-            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
+            WHERE ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, 'v')}
           `);
         data = driverMapping.recordset;
         filename = 'driver_mapping_export.xlsx';
@@ -202,7 +202,7 @@ export const exportData = async (req: AuthRequest, res: Response) => {
             JOIN Vehicles v ON mk.VehicleID = v.VehicleID
             LEFT JOIN Companies c ON v.CompanyID = c.CompanyID
             LEFT JOIN Depots d ON v.DepotID = d.DepotID
-            WHERE ${companyScopeSql(req.user?.Role, req.user?.CompanyID, 'v')}
+            WHERE ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, 'v')}
           `);
         data = monthlyKm.recordset;
         filename = 'monthly_km_export.xlsx';
@@ -378,11 +378,12 @@ export const uploadDriverMapping = async (req: AuthRequest, res: Response) => {
           .input('Plate', sql.NVarChar, plate)
           .input('DriverID', sql.Int, userId)
           .input('CompanyID', sql.Int, req.user?.CompanyID || null)
+          .input('UserID', sql.Int, req.user?.UserID)
           .query(`
             UPDATE Vehicles 
             SET AssignedDriverID = @DriverID, UpdatedAt = GETDATE()
             WHERE Plate = @Plate
-            AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
+            AND ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, '')}
           `);
 
         if (result.rowsAffected[0] === 0) {
@@ -487,6 +488,7 @@ export const uploadVehicles = async (req: AuthRequest, res: Response) => {
         await pool.request()
           .input('Plate', sql.NVarChar(20), vehicleData.plate)
           .input('CompanyID', sql.Int, vehicleData.companyId || null)
+          .input('UserID', sql.Int, req.user?.UserID)
           .input('VIN', sql.NVarChar(17), vehicleData.vin || null)
           .input('Make', sql.NVarChar(50), vehicleData.make || null)
           .input('Model', sql.NVarChar(50), vehicleData.model || null)
@@ -524,7 +526,7 @@ export const uploadVehicles = async (req: AuthRequest, res: Response) => {
                 AssignedDriverID = @AssignedDriverID,
                 Status = @Status,
                 UpdatedAt = GETDATE()
-              WHERE Plate = @Plate AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}
+              WHERE Plate = @Plate AND ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, '')}
             END
             ELSE
             BEGIN
@@ -579,7 +581,7 @@ export const uploadInsurance = async (req: AuthRequest, res: Response) => {
           .input('Plate', sql.NVarChar(20), plate)
           .input('CompanyID', sql.Int, elevatedVehicle ? null : req.user?.CompanyID || null)
           .input('UserID', sql.Int, req.user?.UserID)
-          .query(`SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}`);
+          .query(`SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, '')}`);
         
         if (vehicleResult.recordset.length === 0) {
           throw new Error(`Vehicle with plate ${plate} not found or access denied`);
@@ -656,7 +658,7 @@ export const uploadFuel = async (req: AuthRequest, res: Response) => {
           .input('Plate', sql.NVarChar(20), plate)
           .input('CompanyID', sql.Int, elevatedFuel ? null : req.user?.CompanyID || null)
           .input('UserID', sql.Int, req.user?.UserID)
-          .query(`SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND ${companyScopeSql(req.user?.Role, req.user?.CompanyID, '')}`);
+          .query(`SELECT VehicleID FROM Vehicles WHERE Plate = @Plate AND ${buildAccessCondition(req.user?.Role, req.user?.CompanyID, undefined, '')}`);
         
         if (vehicleResult.recordset.length === 0) {
           throw new Error(`Vehicle with plate ${plate} not found or access denied`);
@@ -742,6 +744,26 @@ export const uploadMonthlyKm = async (req: AuthRequest, res: Response): Promise<
     const data = XLSX.utils.sheet_to_json(sheet);
 
     const pool = await connectDB();
+
+    // Kapsam: şirket her zaman zorunlu, depo ataması şirket içinde daraltır (SUPERADMIN hariç)
+    const kmElevated = isElevatedRole(req.user?.Role);
+    let kmCompanyIds: number[] = [];
+    let kmDepotIds: number[] = [];
+    if (!kmElevated && req.user?.UserID) {
+      const companyResult = await pool.request()
+        .input('UserID', sql.Int, req.user.UserID)
+        .query('SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID');
+      kmCompanyIds = companyResult.recordset.map((r: any) => r.CompanyID);
+      if (req.user?.CompanyID) kmCompanyIds.push(req.user.CompanyID);
+
+      const depotResult = await pool.request()
+        .input('UserID', sql.Int, req.user.UserID)
+        .query('SELECT DepotID FROM UserDepots WHERE UserID = @UserID');
+      kmDepotIds = depotResult.recordset
+        .map((r: any) => r.DepotID)
+        .filter((d: any) => d !== null && d !== undefined);
+    }
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -779,7 +801,7 @@ export const uploadMonthlyKm = async (req: AuthRequest, res: Response): Promise<
         // Get VehicleID
         const vehicleResult = await transaction.request()
           .input('Plate', sql.NVarChar, plate)
-          .query('SELECT VehicleID, CurrentKm, CompanyID FROM Vehicles WHERE Plate = @Plate');
+          .query('SELECT VehicleID, CurrentKm, CompanyID, DepotID FROM Vehicles WHERE Plate = @Plate');
 
         if (vehicleResult.recordset.length === 0) {
           errors.push(`Row ${index + 2}: Vehicle not found: ${plate}`);
@@ -788,11 +810,14 @@ export const uploadMonthlyKm = async (req: AuthRequest, res: Response): Promise<
 
         const vehicle = vehicleResult.recordset[0];
 
-        // Permission check
-        const elevatedKm = isElevatedRole(req.user?.Role);
-        if (!elevatedKm && req.user?.CompanyID && vehicle.CompanyID !== req.user.CompanyID) {
-           errors.push(`Row ${index + 2}: Permission denied for vehicle: ${plate}`);
-           continue;
+        // Permission check: şirket kapsamı zorunlu, depo ataması şirket içinde daraltır
+        if (!kmElevated) {
+          const inCompanyScope = kmCompanyIds.includes(vehicle.CompanyID);
+          const inDepotScope = kmDepotIds.length === 0 || vehicle.DepotID == null || kmDepotIds.includes(vehicle.DepotID);
+          if (!inCompanyScope || !inDepotScope) {
+            errors.push(`Row ${index + 2}: Permission denied for vehicle: ${plate}`);
+            continue;
+          }
         }
 
         // Update MonthlyKmLog (Upsert)

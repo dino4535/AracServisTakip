@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
 import { connectDB } from '../config/database';
 import sql from 'mssql';
-import { isElevatedRole, roleMatches } from '../utils/authScope';
+import { isElevatedRole, roleMatches, pickPrimaryRole } from '../utils/authScope';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -11,6 +11,7 @@ export interface AuthRequest extends Request {
     Name: string;
     CompanyID?: number;
     Role?: string;
+    Roles: string[];
     Permissions: string[];
   };
 }
@@ -31,6 +32,10 @@ export const authenticate = async (
     const token = authHeader.substring(7);
     const decoded = verifyToken(token);
 
+    // Çoklu rolü olan kullanıcılar için TEK satır döner: tüm rollerin izinleri birleştirilir
+    // ve en yetkili rol esas alınır. Eski sorgu rol başına bir satır üretip yalnızca
+    // recordset[0]'ı kullanıyordu; ORDER BY olmadığı için hangi rolün kazanacağı belirsizdi
+    // ve örneğin "Manager, Driver" sahibi bir kullanıcı yalnızca Driver izinleriyle çalışıyordu.
     const pool = await connectDB();
     const result = await pool
       .request()
@@ -38,15 +43,21 @@ export const authenticate = async (
       .query(`
         SELECT 
           u.UserID, u.Email, u.Name, u.Surname, u.IsActive, u.CompanyID,
-          r.Name as RoleName,
-          STRING_AGG(p.PermissionCode, ',') as Permissions
+          (SELECT STRING_AGG(pc.PermissionCode, ',') FROM (
+            SELECT DISTINCT p.PermissionCode
+            FROM UserRoles ur
+            JOIN RolePermissions rp ON ur.RoleID = rp.RoleID
+            JOIN Permissions p ON rp.PermissionID = p.PermissionID
+            WHERE ur.UserID = u.UserID
+          ) pc) AS Permissions,
+          (SELECT STRING_AGG(rn.Name, ',') FROM (
+            SELECT DISTINCT r.Name
+            FROM UserRoles ur
+            JOIN Roles r ON ur.RoleID = r.RoleID
+            WHERE ur.UserID = u.UserID
+          ) rn) AS RoleNames
         FROM Users u
-        LEFT JOIN UserRoles ur ON u.UserID = ur.UserID
-        LEFT JOIN Roles r ON ur.RoleID = r.RoleID
-        LEFT JOIN RolePermissions rp ON ur.RoleID = rp.RoleID
-        LEFT JOIN Permissions p ON rp.PermissionID = p.PermissionID
         WHERE u.UserID = @UserID AND u.IsActive = 1
-        GROUP BY u.UserID, u.Email, u.Name, u.Surname, u.IsActive, u.CompanyID, r.Name
       `);
 
     if (result.recordset.length === 0) {
@@ -55,13 +66,20 @@ export const authenticate = async (
     }
 
     const user = result.recordset[0];
+    const roles: string[] = user.RoleNames
+      ? String(user.RoleNames).split(',').map((r: string) => r.trim()).filter((r: string) => r !== '')
+      : [];
+
     req.user = {
       UserID: user.UserID,
       Email: user.Email,
       Name: user.Name + ' ' + user.Surname,
       CompanyID: user.CompanyID,
-      Role: user.RoleName,
-      Permissions: user.Permissions ? user.Permissions.split(',') : [],
+      Role: pickPrimaryRole(roles),
+      Roles: roles,
+      Permissions: user.Permissions
+        ? String(user.Permissions).split(',').map((p: string) => p.trim()).filter((p: string) => p !== '')
+        : [],
     };
 
     next();
@@ -78,6 +96,8 @@ export const authorize = (permission: string) => {
       return;
     }
 
+    // Yalnızca SUPERADMIN izin kontrolünden muaftır; ADMIN dahil diğer roller
+    // açık izin kayıtlarına tabidir.
     if (isElevatedRole(req.user.Role)) {
       next();
       return;
@@ -104,7 +124,8 @@ export const authorizeRole = (roles: string[]) => {
       return;
     }
 
-    if (!roleMatches(req.user.Role, roles)) {
+    // Çoklu rolü olan kullanıcı, rollerinden herhangi biri listede ise erişir.
+    if (!req.user.Roles.some((role) => roleMatches(role, roles))) {
       res.status(403).json({ error: 'Insufficient permissions' });
       return;
     }

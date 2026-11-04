@@ -6,7 +6,7 @@ import { AuthRequest } from '../middleware/auth';
 import { fuelSchema } from '../schemas/fuelSchema';
 import { logAudit } from '../services/auditService';
 import { opetService } from '../services/opetService';
-import { isElevatedRole, companyScopeSql } from '../utils/authScope';
+import { isElevatedRole, companyScopeSql, buildAccessCondition } from '../utils/authScope';
 
 export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -35,15 +35,7 @@ export const getAllFuelRecords = async (req: AuthRequest, res: Response): Promis
         .filter((id: any) => id !== null && id !== undefined);
     }
 
-    if (!elevated) {
-      if (userDepotIds.length > 0) {
-        whereClause += ` AND v.DepotID IN (${userDepotIds.join(',')})`;
-      } else {
-        whereClause += ` AND (@ScopedCompanyID IS NULL OR v.CompanyID = @ScopedCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-      }
-    } else {
-      whereClause += ` AND (@ScopedCompanyID IS NULL OR v.CompanyID = @ScopedCompanyID OR v.CompanyID IN (SELECT CompanyID FROM UserCompanies WHERE UserID = @UserID))`;
-    }
+    whereClause += ` AND ${buildAccessCondition(req.user?.Role, scopedCompanyId, userDepotIds, 'v', '@ScopedCompanyID')}`;
 
     if (vehicleId) {
       whereClause += ` AND f.VehicleID = @VehicleID`;
